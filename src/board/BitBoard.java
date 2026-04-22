@@ -1,0 +1,530 @@
+package board;
+
+import java.util.ArrayList;
+import java.util.List;
+import piece.Piece;
+import piece.PieceColor;
+import piece.PieceType;
+import move.Move;
+/**
+ * Production-level chess bitboard implementation with piece tracking.
+ * Provides an array-like interface while using bitboards internally for efficiency.
+ */
+public class BitBoard {
+    // Bitboards for each piece type and color (12 total)
+    private long[] pieceBitboards;
+    
+    // Occupancy bitboards
+    private long whitePieces;
+    private long blackPieces;
+    private long allPieces;
+    
+    // piece.Piece list for fast iteration (tracks all pieces on board)
+    private PieceList[] pieceLists;
+    
+    // Mailbox representation for O(1) piece lookup by square
+    private Piece[] mailbox;
+    
+    // Game state
+    private PieceColor sideToMove;
+    private int castlingRights; // KQkq encoded as bits
+    private int enPassantSquare; // -1 if none
+    private int halfMoveClock;
+    private int fullMoveNumber;
+    
+    // Castling rights constants
+    public static final int WHITE_KING_SIDE = 1;
+    public static final int WHITE_QUEEN_SIDE = 2;
+    public static final int BLACK_KING_SIDE = 4;
+    public static final int BLACK_QUEEN_SIDE = 8;
+    
+    /**
+     * Creates a new empty board.
+     */
+    public BitBoard() {
+        pieceBitboards = new long[12];
+        mailbox = new Piece[64];
+        pieceLists = new PieceList[12];
+        
+        for (int i = 0; i < 12; i++) {
+            pieceLists[i] = new PieceList();
+        }
+        
+        sideToMove = PieceColor.WHITE;
+        castlingRights = 0;
+        enPassantSquare = -1;
+        halfMoveClock = 0;
+        fullMoveNumber = 1;
+    }
+    
+    /**
+     * Creates a board from FEN notation.
+     */
+    public static BitBoard fromFEN(String fen) {
+        BitBoard board = new BitBoard();
+        String[] parts = fen.split(" ");
+        
+        // Parse piece placement
+        String[] ranks = parts[0].split("/");
+        for (int rank = 7; rank >= 0; rank--) {
+            int file = 0;
+            for (char c : ranks[7 - rank].toCharArray()) {
+                if (Character.isDigit(c)) {
+                    file += (c - '0');
+                } else {
+                    Piece piece = Piece.fromSymbol(c);
+                    if (piece != null) {
+                        int square = rank * 8 + file;
+                        board.setPiece(square, piece);
+                        file++;
+                    }
+                }
+            }
+        }
+        
+        // Parse side to move
+        if (parts.length > 1) {
+            board.sideToMove = parts[1].equals("w") ? PieceColor.WHITE : PieceColor.BLACK;
+        }
+        
+        // Parse castling rights
+        if (parts.length > 2) {
+            board.castlingRights = 0;
+            if (parts[2].contains("K")) board.castlingRights |= WHITE_KING_SIDE;
+            if (parts[2].contains("Q")) board.castlingRights |= WHITE_QUEEN_SIDE;
+            if (parts[2].contains("k")) board.castlingRights |= BLACK_KING_SIDE;
+            if (parts[2].contains("q")) board.castlingRights |= BLACK_QUEEN_SIDE;
+        }
+        
+        // Parse en passant square
+        if (parts.length > 3 && !parts[3].equals("-")) {
+            board.enPassantSquare = Move.stringToSquare(parts[3]);
+        }
+        
+        // Parse move counters
+        if (parts.length > 4) {
+            board.halfMoveClock = Integer.parseInt(parts[4]);
+        }
+        if (parts.length > 5) {
+            board.fullMoveNumber = Integer.parseInt(parts[5]);
+        }
+        
+        return board;
+    }
+    
+    /**
+     * Returns the starting position.
+     */
+    public static BitBoard startingPosition() {
+        return fromFEN("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+    }
+    
+    /**
+     * Gets the piece at a given square (array-like access).
+     * @param square Square index (0-63), where 0 is a1, 7 is h1, 56 is a8, 63 is h8
+     * @return The piece at the square, or null if empty
+     */
+    public Piece getPiece(int square) {
+        return mailbox[square];
+    }
+    
+    /**
+     * Gets the piece at a given file and rank.
+     * @param file File index (0-7, where 0 is 'a' and 7 is 'h')
+     * @param rank Rank index (0-7, where 0 is rank 1 and 7 is rank 8)
+     */
+    public Piece getPiece(int file, int rank) {
+        return mailbox[rank * 8 + file];
+    }
+    
+    /**
+     * Sets a piece at a given square.
+     */
+    public void setPiece(int square, Piece piece) {
+        // Remove existing piece if present
+        Piece existing = mailbox[square];
+        if (existing != null) {
+            removePiece(square);
+        }
+        
+        if (piece != null) {
+            mailbox[square] = piece;
+            int pieceIndex = piece.ordinal();
+            long mask = 1L << square;
+            
+            pieceBitboards[pieceIndex] |= mask;
+            pieceLists[pieceIndex].add(square);
+            
+            if (piece.isWhite()) {
+                whitePieces |= mask;
+            } else {
+                blackPieces |= mask;
+            }
+            allPieces |= mask;
+        }
+    }
+    
+    /**
+     * Removes a piece from a square.
+     */
+    public void removePiece(int square) {
+        Piece piece = mailbox[square];
+        if (piece == null) return;
+        
+        mailbox[square] = null;
+        int pieceIndex = piece.ordinal();
+        long mask = ~(1L << square);
+        
+        pieceBitboards[pieceIndex] &= mask;
+        pieceLists[pieceIndex].remove(square);
+        
+        whitePieces &= mask;
+        blackPieces &= mask;
+        allPieces &= mask;
+    }
+    
+    /**
+     * Moves a piece from one square to another (used for making moves).
+     */
+    public void movePiece(int from, int to) {
+        Piece piece = mailbox[from];
+        if (piece == null) return;
+        
+        removePiece(from);
+        setPiece(to, piece);
+    }
+    
+    /**
+     * Makes a move on the board.
+     */
+    public void makeMove(Move move) {
+        int from = move.getFrom();
+        int to = move.getTo();
+        Piece piece = getPiece(from);
+        
+        if (piece == null) return;
+        
+        // Handle captures
+        if (move.isCapture() && !move.isEnPassant()) {
+            removePiece(to);
+        }
+        
+        // Handle en passant
+        if (move.isEnPassant()) {
+            int captureSquare = sideToMove == PieceColor.WHITE ? to - 8 : to + 8;
+            removePiece(captureSquare);
+        }
+        
+        // move.Move the piece
+        movePiece(from, to);
+        
+        // Handle promotion
+        if (move.isPromotion()) {
+            PieceType promoType = move.getPromotionPieceType();
+            Piece promoPiece = Piece.getPiece(piece.getColor(), promoType);
+            removePiece(to);
+            setPiece(to, promoPiece);
+        }
+        
+        // Handle castling
+        if (move.isCastling()) {
+            if (move.getFlags() == Move.KING_CASTLE) {
+                int rookFrom = sideToMove == PieceColor.WHITE ? 7 : 63;
+                int rookTo = sideToMove == PieceColor.WHITE ? 5 : 61;
+                movePiece(rookFrom, rookTo);
+            } else { // Queen side
+                int rookFrom = sideToMove == PieceColor.WHITE ? 0 : 56;
+                int rookTo = sideToMove == PieceColor.WHITE ? 3 : 59;
+                movePiece(rookFrom, rookTo);
+            }
+        }
+        
+        // Update en passant square
+        if (move.isDoublePawnPush()) {
+            enPassantSquare = sideToMove == PieceColor.WHITE ? from + 8 : from - 8;
+        } else {
+            enPassantSquare = -1;
+        }
+        
+        // Update castling rights
+        updateCastlingRights(from, to);
+        
+        // Update move counters
+        if (piece.getType() == PieceType.PAWN || move.isCapture()) {
+            halfMoveClock = 0;
+        } else {
+            halfMoveClock++;
+        }
+        
+        if (sideToMove == PieceColor.BLACK) {
+            fullMoveNumber++;
+        }
+        
+        // Switch side to move
+        sideToMove = sideToMove.opposite();
+    }
+    
+    /**
+     * Updates castling rights based on piece movement.
+     */
+    private void updateCastlingRights(int from, int to) {
+        // King moves remove both castling rights for that side
+        if (from == 4) { // White king
+            castlingRights &= ~(WHITE_KING_SIDE | WHITE_QUEEN_SIDE);
+        } else if (from == 60) { // Black king
+            castlingRights &= ~(BLACK_KING_SIDE | BLACK_QUEEN_SIDE);
+        }
+        
+        // Rook moves or captures remove specific castling rights
+        if (from == 0 || to == 0) castlingRights &= ~WHITE_QUEEN_SIDE;
+        if (from == 7 || to == 7) castlingRights &= ~WHITE_KING_SIDE;
+        if (from == 56 || to == 56) castlingRights &= ~BLACK_QUEEN_SIDE;
+        if (from == 63 || to == 63) castlingRights &= ~BLACK_KING_SIDE;
+    }
+    
+    /**
+     * Gets all pieces of a specific type and color.
+     */
+    public List<Integer> getPieces(Piece piece) {
+        return pieceLists[piece.ordinal()].getSquares();
+    }
+    
+    /**
+     * Gets all pieces of a specific color.
+     */
+    public List<Integer> getPieces(PieceColor color) {
+        List<Integer> pieces = new ArrayList<>();
+        for (Piece piece : Piece.values()) {
+            if (piece.getColor() == color) {
+                pieces.addAll(getPieces(piece));
+            }
+        }
+        return pieces;
+    }
+    
+    /**
+     * Gets the bitboard for a specific piece.
+     */
+    public long getBitboard(Piece piece) {
+        return pieceBitboards[piece.ordinal()];
+    }
+    
+    /**
+     * Gets the occupancy bitboard for white pieces.
+     */
+    public long getWhitePieces() {
+        return whitePieces;
+    }
+    
+    /**
+     * Gets the occupancy bitboard for black pieces.
+     */
+    public long getBlackPieces() {
+        return blackPieces;
+    }
+    
+    /**
+     * Gets the occupancy bitboard for all pieces.
+     */
+    public long getAllPieces() {
+        return allPieces;
+    }
+    
+    /**
+     * Gets the occupancy bitboard for a specific color.
+     */
+    public long getColorPieces(PieceColor color) {
+        return color == PieceColor.WHITE ? whitePieces : blackPieces;
+    }
+    
+    /**
+     * Checks if a square is occupied.
+     */
+    public boolean isOccupied(int square) {
+        return mailbox[square] != null;
+    }
+    
+    /**
+     * Checks if a square is empty.
+     */
+    public boolean isEmpty(int square) {
+        return mailbox[square] == null;
+    }
+    
+    // Getters and setters for game state
+    
+    public PieceColor getSideToMove() {
+        return sideToMove;
+    }
+    
+    public void setSideToMove(PieceColor color) {
+        this.sideToMove = color;
+    }
+    
+    public int getCastlingRights() {
+        return castlingRights;
+    }
+    
+    public void setCastlingRights(int rights) {
+        this.castlingRights = rights;
+    }
+    
+    public boolean canCastle(int right) {
+        return (castlingRights & right) != 0;
+    }
+    
+    public int getEnPassantSquare() {
+        return enPassantSquare;
+    }
+    
+    public void setEnPassantSquare(int square) {
+        this.enPassantSquare = square;
+    }
+    
+    public int getHalfMoveClock() {
+        return halfMoveClock;
+    }
+    
+    public void setHalfMoveClock(int clock) {
+        this.halfMoveClock = clock;
+    }
+    
+    public int getFullMoveNumber() {
+        return fullMoveNumber;
+    }
+    
+    public void setFullMoveNumber(int number) {
+        this.fullMoveNumber = number;
+    }
+    
+    /**
+     * Converts the board to FEN notation.
+     */
+    public String toFEN() {
+        StringBuilder fen = new StringBuilder();
+        
+        // piece.Piece placement
+        for (int rank = 7; rank >= 0; rank--) {
+            int emptyCount = 0;
+            for (int file = 0; file < 8; file++) {
+                int square = rank * 8 + file;
+                Piece piece = getPiece(square);
+                
+                if (piece == null) {
+                    emptyCount++;
+                } else {
+                    if (emptyCount > 0) {
+                        fen.append(emptyCount);
+                        emptyCount = 0;
+                    }
+                    fen.append(piece.getSymbol());
+                }
+            }
+            if (emptyCount > 0) {
+                fen.append(emptyCount);
+            }
+            if (rank > 0) {
+                fen.append('/');
+            }
+        }
+        
+        // Side to move
+        fen.append(' ').append(sideToMove == PieceColor.WHITE ? 'w' : 'b');
+        
+        // Castling rights
+        fen.append(' ');
+        if (castlingRights == 0) {
+            fen.append('-');
+        } else {
+            if ((castlingRights & WHITE_KING_SIDE) != 0) fen.append('K');
+            if ((castlingRights & WHITE_QUEEN_SIDE) != 0) fen.append('Q');
+            if ((castlingRights & BLACK_KING_SIDE) != 0) fen.append('k');
+            if ((castlingRights & BLACK_QUEEN_SIDE) != 0) fen.append('q');
+        }
+        
+        // En passant square
+        fen.append(' ');
+        if (enPassantSquare == -1) {
+            fen.append('-');
+        } else {
+            fen.append(Move.squareToString(enPassantSquare));
+        }
+        
+        // move.Move counters
+        fen.append(' ').append(halfMoveClock);
+        fen.append(' ').append(fullMoveNumber);
+        
+        return fen.toString();
+    }
+    
+    /**
+     * Creates a copy of this board.
+     */
+    public BitBoard copy() {
+        BitBoard copy = new BitBoard();
+        
+        // Copy piece positions
+        for (int i = 0; i < 64; i++) {
+            if (mailbox[i] != null) {
+                copy.setPiece(i, mailbox[i]);
+            }
+        }
+        
+        // Copy game state
+        copy.sideToMove = this.sideToMove;
+        copy.castlingRights = this.castlingRights;
+        copy.enPassantSquare = this.enPassantSquare;
+        copy.halfMoveClock = this.halfMoveClock;
+        copy.fullMoveNumber = this.fullMoveNumber;
+        
+        return copy;
+    }
+    
+    /**
+     * Pretty prints the board to console.
+     */
+    public void print() {
+        System.out.println("\n  a b c d e f g h");
+        System.out.println("  ---------------");
+        for (int rank = 7; rank >= 0; rank--) {
+            System.out.print((rank + 1) + "|");
+            for (int file = 0; file < 8; file++) {
+                Piece piece = getPiece(file, rank);
+                System.out.print(piece == null ? ". " : piece.getSymbol() + " ");
+            }
+            System.out.println("|" + (rank + 1));
+        }
+        System.out.println("  ---------------");
+        System.out.println("  a b c d e f g h\n");
+        System.out.println("FEN: " + toFEN());
+    }
+    
+    /**
+     * Helper class to track pieces of a specific type efficiently.
+     */
+    private static class PieceList {
+        private List<Integer> squares;
+        
+        public PieceList() {
+            this.squares = new ArrayList<>();
+        }
+        
+        public void add(int square) {
+            if (!squares.contains(square)) {
+                squares.add(square);
+            }
+        }
+        
+        public void remove(int square) {
+            squares.remove(Integer.valueOf(square));
+        }
+        
+        public List<Integer> getSquares() {
+            return new ArrayList<>(squares);
+        }
+        
+        public int size() {
+            return squares.size();
+        }
+    }
+}
