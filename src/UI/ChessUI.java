@@ -212,7 +212,21 @@ public class ChessUI extends JFrame {
         }
 
         private void drawPiece(Graphics2D g2d, Piece piece, int x, int y) {
-            ChessPieceImages.drawPiece(g2d, piece, x, y);
+            String pieceCode = (piece.isWhite() ? "w" : "b") + 
+                             getPieceTypeLetter(piece.getType());
+            CburnettSVGRenderer.drawPiece(g2d, pieceCode, x, y, SQUARE_SIZE);
+        }
+
+        private String getPieceTypeLetter(PieceType type) {
+            switch (type) {
+                case PAWN: return "P";
+                case KNIGHT: return "N";
+                case BISHOP: return "B";
+                case ROOK: return "R";
+                case QUEEN: return "Q";
+                case KING: return "K";
+                default: return "P";
+            }
         }
 
         private void drawCoordinates(Graphics2D g2d, int file, int rank, int x, int y) {

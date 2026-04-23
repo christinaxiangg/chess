@@ -103,7 +103,7 @@ public class SVGChessPieces {
                 case "M":
                     if (values.length >= 2) {
                         path.moveTo(values[0], values[1]);
-                        for (int i = 2; i < values.length - 1; i += 2) {
+                        for (int i = 2; i <= values.length - 2; i += 2) {
                             path.lineTo(values[i], values[i + 1]);
                         }
                     }
@@ -111,7 +111,7 @@ public class SVGChessPieces {
                 case "m":
                     if (values.length >= 2) {
                         path.moveTo(values[0], values[1]);
-                        for (int i = 2; i < values.length - 1; i += 2) {
+                        for (int i = 2; i <= values.length - 2; i += 2) {
                             path.lineTo(values[i], values[i + 1]);
                         }
                     }
@@ -119,7 +119,7 @@ public class SVGChessPieces {
                 case "L":
                     if (values.length >= 2) {
                         path.lineTo(values[0], values[1]);
-                        for (int i = 2; i < values.length - 1; i += 2) {
+                        for (int i = 2; i <= values.length - 2; i += 2) {
                             path.lineTo(values[i], values[i + 1]);
                         }
                     }
@@ -127,7 +127,7 @@ public class SVGChessPieces {
                 case "l":
                     if (values.length >= 2) {
                         path.lineTo(values[0], values[1]);
-                        for (int i = 2; i < values.length - 1; i += 2) {
+                        for (int i = 2; i <= values.length - 2; i += 2) {
                             path.lineTo(values[i], values[i + 1]);
                         }
                     }
