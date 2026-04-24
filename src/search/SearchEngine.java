@@ -36,7 +36,8 @@ public class SearchEngine {
     // Late move reduction parameters
     private static final int LMR_MIN_DEPTH = 3;
     private static final int LMR_FULL_DEPTH_MOVES = 4;
-    private static final int LMR_REDUCTION = 1;
+    private static final int LMR_REDUCTION_BASE = 1;
+    private static final int LMR_REDUCTION_SCALING = 2;  // For adaptive LMR at deeper depths
     
     // Search data structures
     private final TranspositionTable transpositionTable;
@@ -61,6 +62,8 @@ public class SearchEngine {
     private Move bestMove;
     private int bestScore;
     
+    // Selective depth tracking for deep searches
+    private int selectiveDepth;
     /**
      * Creates a new search engine with specified TT size.
      */
@@ -81,6 +84,7 @@ public class SearchEngine {
         this.stopSearch = false;
         this.bestMove = null;
         this.bestScore = 0;
+        this.selectiveDepth = 0;
         
         resetSearchData();
         resetStatistics();
@@ -107,8 +111,8 @@ public class SearchEngine {
             long elapsed = System.currentTimeMillis() - startTime;
             long nps = (nodesSearched * 1000) / Math.max(elapsed, 1);
             
-            System.out.printf("info depth %d score cp %d nodes %d time %d nps %d pv %s\n",
-                            depth, score, nodesSearched, elapsed, nps, 
+            System.out.printf("info depth %d seldepth %d score cp %d nodes %d time %d nps %d pv %s\n",
+                            depth, selectiveDepth, score, nodesSearched, elapsed, nps, 
                             bestMove != null ? bestMove.toUCI() : "none");
         }
         
@@ -136,9 +140,19 @@ public class SearchEngine {
      * Alpha-Beta search with PVS (Principal Variation Search).
      */
     private int alphaBeta(BitBoard board, int depth, int ply, int alpha, int beta, boolean allowNull) {
+        // Update selective depth tracking
+        if (ply > selectiveDepth) {
+            selectiveDepth = ply;
+        }
+        
         // Check time limit
         if (shouldStop()) {
             return 0;
+        }
+        
+        // CRITICAL: Prevent search explosion at very deep plies
+        if (ply >= MAX_PLY - 1) {
+            return Evaluator.evaluate(board);
         }
         
         // Check for draw by repetition or fifty-move rule
@@ -149,8 +163,8 @@ public class SearchEngine {
         boolean isPVNode = beta - alpha > 1;
         boolean inCheck = CheckValidator.isKingInCheck(board, board.getSideToMove());
         
-        // Check extension
-        if (inCheck && depth < MAX_PLY) {
+        // Check extension - FIXED: Now correctly checks ply instead of depth
+        if (inCheck && ply < MAX_PLY - 1) {
             depth++;
         }
         
@@ -249,18 +263,30 @@ public class SearchEngine {
                 // Search first move with full window
                 score = -alphaBeta(newBoard, depth - 1, ply + 1, -beta, -alpha, true);
             } else {
-                // Late move.Move Reduction (LMR)
+                // Enhanced Late Move Reduction (LMR) - scales with depth for deeper searches
                 int reduction = 0;
                 if (depth >= LMR_MIN_DEPTH && i >= LMR_FULL_DEPTH_MOVES && 
-                    !move.isCapture() && !move.isPromotion() && !inCheck) {
-                    reduction = LMR_REDUCTION;
+                    !inCheck && !move.isCapture() && !move.isPromotion()) {
+                    
+                    // Adaptive reduction: more aggressive at higher depths
+                    reduction = LMR_REDUCTION_BASE;
+                    if (depth >= 6) {
+                        reduction += (depth - 6) / LMR_REDUCTION_SCALING;
+                    }
+                    // Cap reduction to prevent over-pruning
+                    reduction = Math.min(reduction, depth - 1);
                 }
                 
-                // Search with null window
+                // Try null window search first
                 score = -alphaBeta(newBoard, depth - 1 - reduction, ply + 1, -alpha - 1, -alpha, true);
                 
-                // Re-search if needed
-                if (score > alpha && (score < beta || reduction > 0)) {
+                // If it fails high and we reduced, search again at full depth
+                if (score > alpha && reduction > 0) {
+                    score = -alphaBeta(newBoard, depth - 1, ply + 1, -alpha - 1, -alpha, true);
+                }
+                
+                // If still fails high, do full window search
+                if (score > alpha && score < beta) {
                     score = -alphaBeta(newBoard, depth - 1, ply + 1, -beta, -alpha, true);
                 }
             }
@@ -268,30 +294,30 @@ public class SearchEngine {
             if (score > bestScoreFound) {
                 bestScoreFound = score;
                 bestMoveFound = move;
-            }
-            
-            if (score > alpha) {
-                alpha = score;
-                raisedAlpha = true;
-                entryType = TranspositionTable.EntryType.EXACT;
                 
-                if (ply == 0) {
-                    bestMove = move;
-                }
-            }
-            
-            if (alpha >= beta) {
-                // Beta cutoff
-                betaCutoffs++;
-                entryType = TranspositionTable.EntryType.LOWER_BOUND;
-                
-                // Update killer moves (for quiet moves only)
-                if (!move.isCapture() && !move.isPromotion()) {
-                    updateKillerMoves(move, ply);
-                    updateHistoryTable(move, depth);
+                if (score > alpha) {
+                    alpha = score;
+                    raisedAlpha = true;
+                    entryType = TranspositionTable.EntryType.EXACT;
+                    
+                    // Update best move at root
+                    if (ply == 0) {
+                        bestMove = move;
+                    }
                 }
                 
-                break;
+                if (alpha >= beta) {
+                    betaCutoffs++;
+                    entryType = TranspositionTable.EntryType.LOWER_BOUND;
+                    
+                    // Update killer moves for non-captures
+                    if (!move.isCapture()) {
+                        updateKillerMoves(move, ply);
+                        updateHistoryTable(move, depth);
+                    }
+                    
+                    break; // Beta cutoff
+                }
             }
         }
         
@@ -303,13 +329,24 @@ public class SearchEngine {
     
     /**
      * Quiescence search to avoid horizon effect.
+     * Enhanced with deeper ply limit for depth 64+ searches.
      */
     private int quiescence(BitBoard board, int ply, int alpha, int beta) {
         qNodesSearched++;
         
+        // Update selective depth
+        if (ply > selectiveDepth) {
+            selectiveDepth = ply;
+        }
+        
         // Check time limit
         if (shouldStop()) {
             return 0;
+        }
+        
+        // Prevent quiescence explosion
+        if (ply >= MAX_PLY - 1) {
+            return Evaluator.evaluate(board);
         }
         
         // Stand pat score
