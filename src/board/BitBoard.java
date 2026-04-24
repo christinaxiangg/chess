@@ -186,8 +186,12 @@ public class BitBoard {
         pieceBitboards[pieceIndex] &= mask;
         pieceLists[pieceIndex].remove(square);
         
-        whitePieces &= mask;
-        blackPieces &= mask;
+        // Only clear the bit for the correct color
+        if (piece.isWhite()) {
+            whitePieces &= mask;
+        } else {
+            blackPieces &= mask;
+        }
         allPieces &= mask;
     }
     

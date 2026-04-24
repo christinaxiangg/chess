@@ -210,11 +210,15 @@ public class SearchEngine {
         
         // Null move pruning
         if (allowNull && !isPVNode && !inCheck && depth >= NULL_MOVE_MIN_DEPTH && hasNonPawnMaterial(board)) {
-            BitBoard nullBoard = board.copy();
-            nullBoard.setSideToMove(nullBoard.getSideToMove().opposite());
+            PieceColor originalSide = board.getSideToMove();
+            int originalEnPassant = board.getEnPassantSquare();
+            board.setSideToMove(originalSide.opposite());
+            board.setEnPassantSquare(-1);
             
-            int nullScore = -alphaBeta(nullBoard, depth - 1 - NULL_MOVE_REDUCTION, ply + 1, 
+            int nullScore = -alphaBeta(board, depth - 1 - NULL_MOVE_REDUCTION, ply + 1, 
                                       -beta, -beta + 1, false);
+            board.setSideToMove(originalSide);
+            board.setEnPassantSquare(originalEnPassant);
             
             if (nullScore >= beta) {
                 nullMoveCutoffs++;
@@ -253,15 +257,20 @@ public class SearchEngine {
         for (int i = 0; i < moves.size(); i++) {
             Move move = moves.get(i);
             
-            BitBoard newBoard = board.copy();
-            newBoard.makeMove(move);
+            // OPTIMIZED: makeMove/undoMakeMove instead of board.copy()
+            board.makeMove(move);
             
+            // Verify move legality (king not in check after the move)
+            if (CheckValidator.isKingInCheck(board, board.getSideToMove().opposite())) {
+                board.undoMakeMove(move);
+                continue;
+            }
             int score;
             
             // Principal Variation Search
             if (i == 0) {
                 // Search first move with full window
-                score = -alphaBeta(newBoard, depth - 1, ply + 1, -beta, -alpha, true);
+                score = -alphaBeta(board, depth - 1, ply + 1, -beta, -alpha, true);
             } else {
                 // Enhanced Late Move Reduction (LMR) - scales with depth for deeper searches
                 int reduction = 0;
@@ -278,18 +287,20 @@ public class SearchEngine {
                 }
                 
                 // Try null window search first
-                score = -alphaBeta(newBoard, depth - 1 - reduction, ply + 1, -alpha - 1, -alpha, true);
+                score = -alphaBeta(board, depth - 1 - reduction, ply + 1, -alpha - 1, -alpha, true);
                 
                 // If it fails high and we reduced, search again at full depth
                 if (score > alpha && reduction > 0) {
-                    score = -alphaBeta(newBoard, depth - 1, ply + 1, -alpha - 1, -alpha, true);
+                    score = -alphaBeta(board, depth - 1, ply + 1, -alpha - 1, -alpha, true);
                 }
                 
                 // If still fails high, do full window search
                 if (score > alpha && score < beta) {
-                    score = -alphaBeta(newBoard, depth - 1, ply + 1, -beta, -alpha, true);
+                    score = -alphaBeta(board, depth - 1, ply + 1, -beta, -alpha, true);
                 }
             }
+            // CRITICAL: Undo the move before processing results
+            board.undoMakeMove(move);
             
             if (score > bestScoreFound) {
                 bestScoreFound = score;
@@ -375,15 +386,19 @@ public class SearchEngine {
                 continue;
             }
             
-            BitBoard newBoard = board.copy();
-            newBoard.makeMove(move);
+            // OPTIMIZED: makeMove/undoMakeMove instead of board.copy()
+            board.makeMove(move);
             
             // Prune if move leaves king in check (illegal)
-            if (CheckValidator.isKingInCheck(newBoard, board.getSideToMove())) {
+            if (CheckValidator.isKingInCheck(board, board.getSideToMove().opposite())) {
+                board.undoMakeMove(move);
                 continue;
             }
             
-            int score = -quiescence(newBoard, ply + 1, -beta, -alpha);
+            int score = -quiescence(board, ply + 1, -beta, -alpha);
+            
+            // CRITICAL: Undo the move
+            board.undoMakeMove(move);
             
             if (score >= beta) {
                 return beta;
