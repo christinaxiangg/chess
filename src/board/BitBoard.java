@@ -22,6 +22,9 @@ public class BitBoard {
     // piece.Piece list for fast iteration (tracks all pieces on board)
     private PieceList[] pieceLists;
     
+    // Stack to store board states for undo operations
+    private java.util.Stack<BoardState> stateHistory;
+    
     // Mailbox representation for O(1) piece lookup by square
     private Piece[] mailbox;
     
@@ -31,6 +34,9 @@ public class BitBoard {
     private int enPassantSquare; // -1 if none
     private int halfMoveClock;
     private int fullMoveNumber;
+
+    // Zobrist hash for position identification
+    private long currentHash;
     
     // Castling rights constants
     public static final int WHITE_KING_SIDE = 1;
@@ -45,6 +51,7 @@ public class BitBoard {
         pieceBitboards = new long[12];
         mailbox = new Piece[64];
         pieceLists = new PieceList[12];
+        stateHistory = new java.util.Stack<>();
         
         for (int i = 0; i < 12; i++) {
             pieceLists[i] = new PieceList();
@@ -55,6 +62,7 @@ public class BitBoard {
         enPassantSquare = -1;
         halfMoveClock = 0;
         fullMoveNumber = 1;
+        currentHash = 0L;
     }
     
     /**
@@ -170,7 +178,7 @@ public class BitBoard {
     public void removePiece(int square) {
         Piece piece = mailbox[square];
         if (piece == null) return;
-        
+
         mailbox[square] = null;
         int pieceIndex = piece.ordinal();
         long mask = ~(1L << square);
@@ -190,10 +198,39 @@ public class BitBoard {
         Piece piece = mailbox[from];
         if (piece == null) return;
         
+
+        
         removePiece(from);
         setPiece(to, piece);
     }
     
+    /**
+     * Inner class to store board state for undo operations.
+     */
+    private static class BoardState {
+        private final int castlingRights;
+        private final int enPassantSquare;
+        private final int halfMoveClock;
+        private final int fullMoveNumber;
+        private final PieceColor sideToMove;
+        private final Piece capturedPiece;
+        private final Piece movedPiece;
+        private final long hash;
+        
+        public BoardState(int castlingRights, int enPassantSquare, int halfMoveClock, 
+                          int fullMoveNumber, PieceColor sideToMove, Piece capturedPiece, 
+                          Piece movedPiece, long hash) {
+            this.castlingRights = castlingRights;
+            this.enPassantSquare = enPassantSquare;
+            this.halfMoveClock = halfMoveClock;
+            this.fullMoveNumber = fullMoveNumber;
+            this.sideToMove = sideToMove;
+            this.capturedPiece = capturedPiece;
+            this.movedPiece = movedPiece;
+            this.hash = hash;
+        }
+    }
+
     /**
      * Makes a move on the board.
      */
@@ -204,6 +241,31 @@ public class BitBoard {
         
         if (piece == null) return;
         
+
+        
+        // Capture state BEFORE any modifications
+        Piece capturedPiece = null;
+        if (move.isCapture() && !move.isEnPassant()) {
+            capturedPiece = getPiece(to);
+        } else if (move.isEnPassant()) {
+            int captureSquare = sideToMove == PieceColor.WHITE ? to - 8 : to + 8;
+            capturedPiece = getPiece(captureSquare);
+        }
+
+        Piece moved = piece;
+
+        // Push state immediately with original values
+        stateHistory.push(new BoardState(
+            castlingRights,
+            enPassantSquare,
+            halfMoveClock,
+            fullMoveNumber,
+            sideToMove,
+            capturedPiece,
+            piece,  // The original piece before promotion
+            currentHash
+        ));
+
         // Handle captures
         if (move.isCapture() && !move.isEnPassant()) {
             removePiece(to);
@@ -239,15 +301,14 @@ public class BitBoard {
             }
         }
         
+        // Update castling rights
+        updateCastlingRights(from, to);
         // Update en passant square
         if (move.isDoublePawnPush()) {
             enPassantSquare = sideToMove == PieceColor.WHITE ? from + 8 : from - 8;
         } else {
             enPassantSquare = -1;
         }
-        
-        // Update castling rights
-        updateCastlingRights(from, to);
         
         // Update move counters
         if (piece.getType() == PieceType.PAWN || move.isCapture()) {
@@ -262,6 +323,63 @@ public class BitBoard {
         
         // Switch side to move
         sideToMove = sideToMove.opposite();
+    }
+    
+    /**
+     * Undoes a move on the board, restoring the state to before the move was made.
+     */
+    public void undoMakeMove(Move move) {
+        if (stateHistory.isEmpty()) {
+            return;
+        }
+        
+        BoardState state = stateHistory.pop();
+        int from = move.getFrom();
+        int to = move.getTo();
+        
+        // Handle castling: move rook back FIRST (before restoring side)
+        if (move.isCastling()) {
+            // Use current sideToMove (which was flipped in makeMove)
+            PieceColor movingSide = sideToMove.opposite();
+            if (move.getFlags() == Move.KING_CASTLE) {
+                int rookFrom = movingSide == PieceColor.WHITE ? 7 : 63;
+                int rookTo = movingSide == PieceColor.WHITE ? 5 : 61;
+                movePiece(rookTo, rookFrom);
+            } else { // Queen side
+                int rookFrom = movingSide == PieceColor.WHITE ? 0 : 56;
+                int rookTo = movingSide == PieceColor.WHITE ? 3 : 59;
+                movePiece(rookTo, rookFrom);
+            }
+        }
+        
+        // Handle promotion: get the promoted piece and replace with original pawn
+        if (move.isPromotion()) {
+            removePiece(to);
+            setPiece(to, state.movedPiece);  // Restore original pawn
+        }
+        
+        // Move piece back from 'to' to 'from'
+        movePiece(to, from);
+        
+        // Restore captured piece
+        if (move.isCapture()) {
+            if (move.isEnPassant()) {
+                // Restore the captured pawn at the en passant square
+                int captureSquare = state.sideToMove == PieceColor.WHITE ? to - 8 : to + 8;
+                setPiece(captureSquare, state.capturedPiece);
+            } else {
+                // Restore normally captured piece
+                setPiece(to, state.capturedPiece);
+            }
+        }
+        
+        // Restore all game state
+        sideToMove = state.sideToMove;
+        castlingRights = state.castlingRights;
+        enPassantSquare = state.enPassantSquare;
+        halfMoveClock = state.halfMoveClock;
+        fullMoveNumber = state.fullMoveNumber;
+        currentHash = state.hash;
     }
     
     /**
