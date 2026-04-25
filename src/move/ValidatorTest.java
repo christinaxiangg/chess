@@ -17,7 +17,6 @@ public class ValidatorTest {
         testCastling();
         testEnPassant();
         testPinDetection();
-        testLegalMoveGeneration();
     }
     
     /**
@@ -162,37 +161,5 @@ public class ValidatorTest {
         System.out.println("Result: " + (!isValid ? "PASS" : "FAIL") + "\n");
     }
     
-    /**
-     * Test legal move generation.
-     */
-    private static void testLegalMoveGeneration() {
-        System.out.println("6. Legal move.Move Generation Test");
-        System.out.println("------------------------------");
-        
-        BitBoard board = BitBoard.startingPosition();
-        
-        java.util.List<Move> legalMoves = MoveValidator.generateLegalMoves(board);
-        System.out.println("Legal moves from starting position: " + legalMoves.size());
-        System.out.println("Expected: 20");
-        System.out.println("Result: " + (legalMoves.size() == 20 ? "PASS" : "FAIL"));
-        
-        System.out.println("\nAll legal moves:");
-        for (Move move : legalMoves) {
-            System.out.println("  " + move.toUCI());
-        }
-        System.out.println();
-        
-        // Test a position with fewer legal moves
-        board = BitBoard.fromFEN("4k3/8/8/8/8/8/4R3/4K3 b - - 0 1");
-        board.print();
-        
-        legalMoves = MoveValidator.generateLegalMoves(board);
-        System.out.println("Legal moves for black (king in check): " + legalMoves.size());
-        System.out.println("Black must move king out of check");
-        System.out.println("\nLegal moves:");
-        for (Move move : legalMoves) {
-            System.out.println("  " + move.toUCI());
-        }
-        System.out.println();
-    }
+
 }

@@ -177,7 +177,10 @@ public class BitBoard {
      */
     public void removePiece(int square) {
         Piece piece = mailbox[square];
-        if (piece == null) return;
+        if (piece == null){
+            System.out.println("removePiece Attempting to move a piece from an empty square:"+ Move.squareToString(square));
+            throw new RuntimeException("removePiece Attempting to move a piece from an empty square: " + Move.squareToString(square));
+        }
 
         mailbox[square] = null;
         int pieceIndex = piece.ordinal();
@@ -200,10 +203,10 @@ public class BitBoard {
      */
     public void movePiece(int from, int to) {
         Piece piece = mailbox[from];
-        if (piece == null) return;
-        
-
-        
+        if (piece == null) {
+            System.out.println("movePiece Attempting to move a piece from an empty square:" + Move.squareToString(from));
+            throw new RuntimeException("Attempting to move a piece from an empty square: " + Move.squareToString(from));
+        }
         removePiece(from);
         setPiece(to, piece);
     }
@@ -220,10 +223,10 @@ public class BitBoard {
         private final Piece capturedPiece;
         private final Piece movedPiece;
         private final long hash;
-        
+        private final Move move;
         public BoardState(int castlingRights, int enPassantSquare, int halfMoveClock, 
                           int fullMoveNumber, PieceColor sideToMove, Piece capturedPiece, 
-                          Piece movedPiece, long hash) {
+                          Piece movedPiece, long hash, Move move) {
             this.castlingRights = castlingRights;
             this.enPassantSquare = enPassantSquare;
             this.halfMoveClock = halfMoveClock;
@@ -232,6 +235,7 @@ public class BitBoard {
             this.capturedPiece = capturedPiece;
             this.movedPiece = movedPiece;
             this.hash = hash;
+            this.move = move;
         }
     }
 
@@ -267,7 +271,8 @@ public class BitBoard {
             sideToMove,
             capturedPiece,
             piece,  // The original piece before promotion
-            currentHash
+            currentHash,
+                move
         ));
 
         // Handle captures
@@ -334,10 +339,15 @@ public class BitBoard {
      */
     public void undoMakeMove(Move move) {
         if (stateHistory.isEmpty()) {
+            System.out.println("undoMakeMove called on empty history! Move: " + move);
             return;
         }
         
         BoardState state = stateHistory.pop();
+        Move move2 = state.move; // Use the stored move, not a caller-supplied one
+        if (!move.equals(move2)) {
+            System.out.println("Warning: undoMakeMove move mismatch! Expected: " + move2 + ", got: " + move);
+        }
         int from = move.getFrom();
         int to = move.getTo();
         

@@ -97,8 +97,6 @@ public class MoveGenerator {
      * Checks if a square is attacked by a given side.
      */
     public static boolean isSquareAttacked(BitBoard board, int square, PieceColor attackerColor) {
-        long squareMask = 1L << square;
-        
         // Check pawn attacks
         Piece attackerPawn = attackerColor == PieceColor.WHITE ? Piece.WHITE_PAWN : Piece.BLACK_PAWN;
         long pawnAttacks = attackerColor == PieceColor.WHITE ? 
@@ -162,16 +160,18 @@ public class MoveGenerator {
             if ((toMask & occupied) == 0) {
                 if ((toMask & promotionRank) != 0) {
                     // Promotions
-                    addPromotions(moves, from, to, false);
+                    addPromotions(moves, from, to, false, null);
                 } else {
                     moves.add(new Move(from, to, Move.QUIET_MOVE));
                     
                     // Double push
                     if ((fromMask & startRank) != 0) {
                         int doubleTo = to + pushDirection;
+                        if (doubleTo >= 0 && doubleTo < 64) {
                         long doubleToMask = 1L << doubleTo;
                         if ((doubleToMask & occupied) == 0) {
                             moves.add(new Move(from, doubleTo, Move.DOUBLE_PAWN_PUSH));
+                            }
                         }
                     }
                 }
@@ -188,7 +188,7 @@ public class MoveGenerator {
                 
                 Piece captured = board.getPiece(captureTo);
                 if ((captureToMask & promotionRank) != 0) {
-                    addPromotions(moves, from, captureTo, true);
+                    addPromotions(moves, from, captureTo, true, captured.getType());
                 } else {
                     moves.add(new Move(from, captureTo, Move.CAPTURE, captured.getType()));
                 }
@@ -205,12 +205,13 @@ public class MoveGenerator {
     /**
      * Adds all four promotion moves (knight, bishop, rook, queen).
      */
-    private static void addPromotions(List<Move> moves, int from, int to, boolean isCapture) {
+    private static void addPromotions(List<Move> moves, int from, int to,
+                                      boolean isCapture, PieceType capturedType) {
         if (isCapture) {
-            moves.add(new Move(from, to, Move.KNIGHT_PROMO_CAPTURE));
-            moves.add(new Move(from, to, Move.BISHOP_PROMO_CAPTURE));
-            moves.add(new Move(from, to, Move.ROOK_PROMO_CAPTURE));
-            moves.add(new Move(from, to, Move.QUEEN_PROMO_CAPTURE));
+            moves.add(new Move(from, to, Move.KNIGHT_PROMO_CAPTURE, capturedType));
+            moves.add(new Move(from, to, Move.BISHOP_PROMO_CAPTURE, capturedType));
+            moves.add(new Move(from, to, Move.ROOK_PROMO_CAPTURE,   capturedType));
+            moves.add(new Move(from, to, Move.QUEEN_PROMO_CAPTURE,  capturedType));
         } else {
             moves.add(new Move(from, to, Move.KNIGHT_PROMOTION));
             moves.add(new Move(from, to, Move.BISHOP_PROMOTION));
@@ -315,6 +316,8 @@ public class MoveGenerator {
         if (us == PieceColor.WHITE) {
             // White king-side castling
             if (board.canCastle(BitBoard.WHITE_KING_SIDE)) {
+                Piece rookH1 = board.getPiece(7);
+                if (rookH1 != null && rookH1.getType() == PieceType.ROOK && rookH1.isWhite()) {
                 if ((occupied & 0x60L) == 0) { // f1 and g1 empty
                     if (!isSquareAttacked(board, 4, them) &&  // e1
                         !isSquareAttacked(board, 5, them) &&  // f1
@@ -323,9 +326,12 @@ public class MoveGenerator {
                     }
                 }
             }
+            }
             
             // White queen-side castling
             if (board.canCastle(BitBoard.WHITE_QUEEN_SIDE)) {
+                Piece rookA1 = board.getPiece(0);
+                if (rookA1 != null && rookA1.getType() == PieceType.ROOK && rookA1.isWhite()) {
                 if ((occupied & 0x0EL) == 0) { // b1, c1, d1 empty
                     if (!isSquareAttacked(board, 4, them) &&  // e1
                         !isSquareAttacked(board, 3, them) &&  // d1
@@ -334,9 +340,12 @@ public class MoveGenerator {
                     }
                 }
             }
+            }
         } else {
             // Black king-side castling
             if (board.canCastle(BitBoard.BLACK_KING_SIDE)) {
+                Piece rookH8 = board.getPiece(63);
+                if (rookH8 != null && rookH8.getType() == PieceType.ROOK && rookH8.isBlack()) {
                 if ((occupied & 0x6000000000000000L) == 0) { // f8 and g8 empty
                     if (!isSquareAttacked(board, 60, them) &&  // e8
                         !isSquareAttacked(board, 61, them) &&  // f8
@@ -345,14 +354,18 @@ public class MoveGenerator {
                     }
                 }
             }
+            }
             
             // Black queen-side castling
             if (board.canCastle(BitBoard.BLACK_QUEEN_SIDE)) {
+                Piece rookA8 = board.getPiece(56);
+                if (rookA8 != null && rookA8.getType() == PieceType.ROOK && rookA8.isBlack()) {
                 if ((occupied & 0x0E00000000000000L) == 0) { // b8, c8, d8 empty
                     if (!isSquareAttacked(board, 60, them) &&  // e8
                         !isSquareAttacked(board, 59, them) &&  // d8
                         !isSquareAttacked(board, 58, them)) {  // c8
                         moves.add(new Move(60, 58, Move.QUEEN_CASTLE));
+                        }
                     }
                 }
             }

@@ -6,6 +6,7 @@ import java.util.List;
 import board.BitBoard;
 import move.CheckValidator;
 import move.Move;
+import move.MoveGenerator;
 import move.MoveValidator;
 import piece.PieceColor;
 /**
@@ -320,7 +321,7 @@ public class UCIInterface {
         System.out.println("White in check: " + whiteInCheck);
         System.out.println("Black in check: " + blackInCheck);
         
-        List<Move> legalMoves = MoveValidator.generateLegalMoves(board);
+        List<Move> legalMoves = MoveGenerator.generateLegalMoves(board);
         System.out.println("Legal moves: " + legalMoves.size());
     }
     
@@ -328,7 +329,7 @@ public class UCIInterface {
      * Parses a move in UCI format.
      */
     private Move parseMove(String uciMove) {
-        List<Move> legalMoves = MoveValidator.generateLegalMoves(board);
+        List<Move> legalMoves = MoveGenerator.generateLegalMoves(board);
         
         for (Move move : legalMoves) {
             if (move.toUCI().equals(uciMove)) {

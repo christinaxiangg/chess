@@ -4,13 +4,11 @@ import java.util.ArrayList;
 import board.BitBoard;
 import board.Evaluator;
 import board.ZobristHash;
+import move.*;
 import piece.Piece;
 import piece.PieceColor;
-import move.Move;
-import move.MoveValidator;
-import move.MoveOrdering;
 import piece.PieceType;
-import move.CheckValidator;
+
 /**
  * Production-level chess search engine with:
  * - Alpha-Beta pruning with Principal Variation Search (PVS)
@@ -227,7 +225,7 @@ public class SearchEngine {
         }
         
         // Generate and order moves
-        List<Move> moves = MoveValidator.generateLegalMoves(board);
+        List<Move> moves = MoveGenerator.generateLegalMoves(board);
         
         if (moves.isEmpty()) {
             // Checkmate or stalemate
@@ -416,7 +414,7 @@ public class SearchEngine {
      * Generates only capture moves.
      */
     private List<Move> generateCaptureMoves(BitBoard board) {
-        List<Move> allMoves = MoveValidator.generateLegalMoves(board);
+        List<Move> allMoves = MoveGenerator.generateLegalMoves(board);
         List<Move> captures = new ArrayList<>();
         
         for (Move move : allMoves) {

@@ -498,10 +498,14 @@ public class ChessUI extends JFrame {
             engineThinking = true;
             statusLabel.setText("Engine thinking...");
 
+            // Create a copy of the board for the engine to search on
+            // This prevents the engine from modifying the UI's board state during search
+            final BitBoard boardCopy = board.copy();
+
             engineExecutor.submit(() -> {
                 try {
                     SearchEngine engine = sideToMove == PieceColor.WHITE ? whiteEngine : blackEngine;
-                    SearchEngine.SearchResult result = engine.search(board, 12, 3000);
+                    SearchEngine.SearchResult result = engine.search(boardCopy, 12, 3000);
 
                     SwingUtilities.invokeLater(() -> {
                         if (result.bestMove != null) {
