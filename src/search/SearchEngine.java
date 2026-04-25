@@ -85,7 +85,7 @@ public class SearchEngine {
     public SearchResult search(BitBoard board, int depthLimit, long timeLimitMs) {
 
         // ── Opening book probe ──────────────────────────────────────────────
-        if (openingBook != null && openingBook.isLoaded()) {
+        if (openingBook != null && openingBook.isLoaded() && board.getFullMoveNumber() <= 12) {
             Move bookMove = openingBook.probe(board);
             if (bookMove != null) {
                 System.out.println("info string Book move: " + bookMove.toUCI());

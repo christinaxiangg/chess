@@ -206,6 +206,8 @@ public class OpeningBook {
      */
     public Move probe(BitBoard board) {
         long key = polyglotKey(board);
+        System.out.println("info string Probing book key: 0x" + Long.toHexString(key)
+                + " move=" + board.getFullMoveNumber());
         return findMove(board, key);
     }
 
@@ -260,10 +262,13 @@ public class OpeningBook {
         Move bestLegal = null;
         for (PolyEntry e : entries) {
             cumulative += e.weight;
-            Move m = decodeMove(board, e.rawMove);
-            if (m == null) continue;          // skip illegal entries but keep walking
-            if (bestLegal == null) bestLegal = m;   // remember first legal as fallback
-            if (pick < cumulative) return m;  // this entry was "picked"
+            if (pick < cumulative) {
+                // This entry was picked — find it or nearest legal
+                Move m = decodeMove(board, e.rawMove);
+                if (m != null) return m;
+                // If illegal, fall through to bestLegal below
+                break;
+            }
         }
         // Fallback: return the first legal move we decoded (if any).
         return bestLegal;

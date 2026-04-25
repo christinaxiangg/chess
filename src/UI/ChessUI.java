@@ -31,6 +31,7 @@ public class ChessUI extends JFrame {
     private BitBoard board;
     private Move lastMove;
     private int selectedSquare = -1;
+    private List<Move> legalMovesForSelected = new ArrayList<>();
     private boolean boardFlipped = false;
     private List<Move> moveHistory;
     private JList<String> moveList;
@@ -159,6 +160,12 @@ public class ChessUI extends JFrame {
             Graphics2D g2d = (Graphics2D) g;
             g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
+            // Build set of legal destination squares for highlighting
+            Set<Integer> legalTargets = new HashSet<>();
+            for (Move m : legalMovesForSelected) {
+                legalTargets.add(m.getTo());
+            }
+
             // Draw squares
             for (int rank = 0; rank < 8; rank++) {
                 for (int file = 0; file < 8; file++) {
@@ -197,6 +204,13 @@ public class ChessUI extends JFrame {
                             g2d.setColor(SELECTED_SQUARE_COLOR);
                             g2d.fillRect(x, y, SQUARE_SIZE, SQUARE_SIZE);
                         }
+                    }
+
+                    // Highlight legal destination squares
+                    int sq = displayRank * 8 + displayFile;
+                    if (legalTargets.contains(sq)) {
+                        g2d.setColor(HIGHLIGHT_COLOR);
+                        g2d.fillRect(x, y, SQUARE_SIZE, SQUARE_SIZE);
                     }
 
                     // Draw piece
@@ -273,117 +287,106 @@ public class ChessUI extends JFrame {
                 return;
             }
 
+            // Adjust for flipped board
+            if (boardFlipped) {
+                file = 7 - file;
+                rank = 7 - rank;
+            }
+
             int clickedSquare = rank * 8 + file;
-            System.out.println("Mouse click: file=" + file + ", rank=" + rank + ", square=" + clickedSquare);
 
             if (selectedSquare == -1) {
-                // Select a piece
+                // Select a piece belonging to the side to move
                 Piece piece = board.getPiece(clickedSquare);
-                System.out.println("Piece at square: " + piece);
                 if (piece != null && piece.getColor() == board.getSideToMove()) {
                     selectedSquare = clickedSquare;
-                    System.out.println("Selected square: " + selectedSquare);
+                    // Cache legal moves for this piece only — generated once per selection
+                    legalMovesForSelected.clear();
+                    for (Move m : MoveGenerator.generateLegalMoves(board)) {
+                        if (m.getFrom() == clickedSquare) {
+                            legalMovesForSelected.add(m);
+                        }
+                    }
                 }
             } else {
-                // Check if clicking on another piece of the same color
-                Piece clickedPiece = board.getPiece(clickedSquare);
-                if (clickedPiece != null && clickedPiece.getColor() == board.getSideToMove()) {
-                    // Select the new piece instead
-                    selectedSquare = clickedSquare;
-                    System.out.println("Changed selection to: " + selectedSquare);
+                // Clicking the same square deselects
+                if (clickedSquare == selectedSquare) {
+                    clearSelection();
                     repaint();
                     return;
                 }
 
-                // Try to make a move
-                if (clickedSquare == selectedSquare) {
-                    // Deselect
-                    selectedSquare = -1;
-                } else {
-                    // Attempt move
+                // Clicking another friendly piece re-selects
+                Piece clickedPiece = board.getPiece(clickedSquare);
+                if (clickedPiece != null && clickedPiece.getColor() == board.getSideToMove()) {
+                    selectedSquare = clickedSquare;
+                    legalMovesForSelected.clear();
+                    for (Move m : MoveGenerator.generateLegalMoves(board)) {
+                        if (m.getFrom() == clickedSquare) {
+                            legalMovesForSelected.add(m);
+                        }
+                    }
+                    repaint();
+                    return;
+                }
+
+                // Attempt move — look up from the cached legal move list
+                Move move = findLegalMove(clickedSquare);
+
+                if (move != null && move.isPromotion()) {
+                    // Ask user which piece, then find that specific promotion move
                     Piece movingPiece = board.getPiece(selectedSquare);
-                    Piece capturedPiece = board.getPiece(clickedSquare);
-
-                    // Determine move flags
-                    int moveFlags = Move.QUIET_MOVE;
-
-                    // Check for pawn double push
-                    if (movingPiece != null && movingPiece.getType() == PieceType.PAWN) {
-                        int fromRank = selectedSquare / 8;
-                        int toRank = clickedSquare / 8;
-                        int fromFile = selectedSquare % 8;
-                        int toFile = clickedSquare % 8;
-
-                        // Check for double pawn push
-                        if (Math.abs(toRank - fromRank) == 2 && fromFile == toFile) {
-                            moveFlags = Move.DOUBLE_PAWN_PUSH;
-                        }
-
-                        // Check for diagonal capture (including en passant)
-                        if (fromFile != toFile) {
-                            if (clickedSquare == board.getEnPassantSquare()) {
-                                moveFlags = Move.EP_CAPTURE;
-                            } else if (capturedPiece != null) {
-                                moveFlags = Move.CAPTURE;
-                            }
-                        }
-                    }
-
-                    Move move;
-                    System.out.println("Created move flags: " + moveFlags);
-                    if (capturedPiece != null && moveFlags != Move.EP_CAPTURE && moveFlags < Move.KNIGHT_PROMOTION) {
-                        move = new Move(selectedSquare, clickedSquare, moveFlags, capturedPiece.getType());
-                    } else {
-                        move = new Move(selectedSquare, clickedSquare, moveFlags);
-                    }
-                    System.out.println("Created move: " + move.toUCI() + ", flags: " + move.getFlags());
-
-                    // Check for pawn promotion
-                    Piece movingPiece2 = board.getPiece(selectedSquare);
-                    if (movingPiece2 != null && movingPiece2.getType() == PieceType.PAWN) {
-                        int toRank = clickedSquare / 8;
-                        if ((movingPiece2.isWhite() && toRank == 7) || 
-                            (!movingPiece2.isWhite() && toRank == 0)) {
-                            // Show promotion dialog
-                            PieceType promoType = showPromotionDialog(movingPiece2.getColor());
-                            if (promoType != null) {
-                                int promoFlag = getPromotionFlag(promoType, capturedPiece != null);
-                                move = new Move(selectedSquare, clickedSquare, promoFlag);
-                            }
-                        }
-                    }
-
-                    // Check for castling
-                    if (movingPiece2 != null && movingPiece2.getType() == PieceType.KING) {
-                        if (clickedSquare == selectedSquare + 2) {
-                            move = new Move(selectedSquare, clickedSquare, Move.KING_CASTLE);
-                        } else if (clickedSquare == selectedSquare - 2) {
-                            move = new Move(selectedSquare, clickedSquare, Move.QUEEN_CASTLE);
-                        }
-                    }
-
-                    // Validate and make move
-                    System.out.println("Validating move: " + move.toUCI());
-                    boolean isLegal = MoveValidator.isMoveLegal(board, move);
-                    System.out.println("Is move legal? " + isLegal);
-                    if (isLegal) {
-                        System.out.println("Move is legal, executing...");
-                        makeMove(move);
-                    } else {
-                        // Show error message for illegal move
-                        statusLabel.setText("Illegal move! Try again.");
-                        statusLabel.setForeground(Color.RED);
-                        // Don't deselect the piece so user can try another move
+                    PieceType promoType = showPromotionDialog(movingPiece.getColor());
+                    if (promoType == null) {
+                        // User cancelled promotion dialog — keep piece selected
+                        repaint();
                         return;
                     }
+                    move = findLegalMoveWithPromotion(clickedSquare, promoType);
+                }
 
-                    selectedSquare = -1;
+                if (move != null) {
+                    makeMove(move);
+                    clearSelection();
                     statusLabel.setForeground(Color.BLACK);
+                } else {
+                    statusLabel.setText("Illegal move! Try again.");
+                    statusLabel.setForeground(Color.RED);
+                    // Keep piece selected so user can try another destination
                 }
             }
 
             repaint();
         }
+    }
+
+    /**
+     * Finds the legal move from the currently selected square to the given destination.
+     * For promotions, returns the first matching promotion move (any piece type).
+     */
+    private Move findLegalMove(int to) {
+        for (Move m : legalMovesForSelected) {
+            if (m.getTo() == to) return m;
+        }
+        return null;
+    }
+
+    /**
+     * Finds the legal promotion move to the given destination with the specific piece type.
+     */
+    private Move findLegalMoveWithPromotion(int to, PieceType promoType) {
+        for (Move m : legalMovesForSelected) {
+            if (m.getTo() == to && m.isPromotion()
+                    && m.getPromotionPieceType() == promoType) {
+                return m;
+            }
+        }
+        return null;
+    }
+
+    private void clearSelection() {
+        selectedSquare = -1;
+        legalMovesForSelected.clear();
     }
 
     private PieceType showPromotionDialog(PieceColor color) {
@@ -408,16 +411,6 @@ public class ChessUI extends JFrame {
             }
         }
         return null;
-    }
-
-    private int getPromotionFlag(PieceType promoType, boolean isCapture) {
-        switch (promoType) {
-            case PieceType.QUEEN: return isCapture ? Move.QUEEN_PROMO_CAPTURE : Move.QUEEN_PROMOTION;
-            case PieceType.ROOK: return isCapture ? Move.ROOK_PROMO_CAPTURE : Move.ROOK_PROMOTION;
-            case PieceType.BISHOP: return isCapture ? Move.BISHOP_PROMO_CAPTURE : Move.BISHOP_PROMOTION;
-            case PieceType.KNIGHT: return isCapture ? Move.KNIGHT_PROMO_CAPTURE : Move.KNIGHT_PROMOTION;
-            default: return Move.QUIET_MOVE;
-        }
     }
 
     private void makeMove(Move move) {
@@ -505,7 +498,7 @@ public class ChessUI extends JFrame {
             engineExecutor.submit(() -> {
                 try {
                     SearchEngine engine = sideToMove == PieceColor.WHITE ? whiteEngine : blackEngine;
-                    SearchEngine.SearchResult result = engine.search(boardCopy, 14, 3000);
+                    SearchEngine.SearchResult result = engine.search(boardCopy, 14, 4000);
 
                     SwingUtilities.invokeLater(() -> {
                         if (result.bestMove != null) {
@@ -538,7 +531,7 @@ public class ChessUI extends JFrame {
     private void startNewGame() {
         board = BitBoard.startingPosition();
         lastMove = null;
-        selectedSquare = -1;
+        clearSelection();
         moveHistory.clear();
         moveListModel.clear();
 
@@ -559,13 +552,7 @@ public class ChessUI extends JFrame {
         }
 
         String mode = (String) playerModeCombo.getSelectedItem();
-        int movesToUndo = 1;
-
-        // In engine modes, undo both engine and human moves
-        if (!mode.equals("Human vs Human")) {
-            movesToUndo = 2;
-        }
-
+        int movesToUndo = mode.equals("Human vs Human") ? 1 : 2;
         // Don't undo more moves than available
         movesToUndo = Math.min(movesToUndo, moveHistory.size());
 
@@ -584,7 +571,7 @@ public class ChessUI extends JFrame {
 
         // Update last move
         lastMove = moveHistory.isEmpty() ? null : moveHistory.get(moveHistory.size() - 1);
-
+        clearSelection();
         // Rebuild move list
         rebuildMoveList();
 
