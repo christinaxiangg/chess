@@ -60,6 +60,7 @@ public class ChessUI extends JFrame {
     private boolean engineThinking = false;
     private boolean darkMode = false;
     private JButton darkModeButton;
+    private boolean gameOver = false;
 
     public ChessUI() {
         super("Chess Engine");
@@ -453,8 +454,9 @@ public class ChessUI extends JFrame {
         // Check for game end after repaint
         SwingUtilities.invokeLater(() -> {
             checkGameEnd();
-            // Trigger engine move if needed
-            triggerEngineMove();
+           if (!gameOver) {
+               triggerEngineMove();
+           }
         });
     }
 
@@ -491,6 +493,7 @@ public class ChessUI extends JFrame {
         List<Move> legalMoves = MoveGenerator.generateLegalMoves(board);
 
         if (legalMoves.isEmpty()) {
+            gameOver = true;
             PieceColor sideToMove = board.getSideToMove();
             if (CheckValidator.isKingInCheck(board, sideToMove)) {
                 String winner = sideToMove == PieceColor.WHITE ? "Black" : "White";
