@@ -193,7 +193,7 @@ public class SearchEngine {
             }
         }
         // Check extension - FIXED: Now correctly checks ply instead of depth
-        if (inCheck && ply < MAX_PLY - 1) {
+        if (inCheck) {
             depth++;
         }
         
@@ -212,11 +212,16 @@ public class SearchEngine {
         if (ttEntry != null) {
             ttHits++;
             ttMove = ttEntry.bestMove;
-            
+
             // Use TT score if depth is sufficient and not a PV node
-            if (ttEntry.depth >= depth && !isPVNode) {
+            if (ttMove != null && ttEntry.depth >= depth && !isPVNode) {
                 int ttScore = ttEntry.score;
-                
+                if (ttScore > Evaluator.CHECKMATE_SCORE - 1000) {
+                    ttScore -= ply;
+                } else if (ttScore < -Evaluator.CHECKMATE_SCORE + 1000){
+                    ttScore += ply;
+                }
+
                 switch (ttEntry.type) {
                     case EXACT:
                         return ttScore;
@@ -263,11 +268,6 @@ public class SearchEngine {
         
         // Get counter move
         Move counterMove = null;
-        if (ply > 0) {
-            // Counter move would be based on opponent's last move
-            // This is a simplified implementation
-            counterMove = null; // TODO: track previous move
-        }
         
         MoveOrdering.orderMoves(board, moves, ttMove, killerMoves[ply], counterMove, historyTable);
         
@@ -279,15 +279,13 @@ public class SearchEngine {
         
         for (int i = 0; i < moves.size(); i++) {
             Move move = moves.get(i);
-            
-            // OPTIMIZED: makeMove/undoMakeMove instead of board.copy()
             board.makeMove(move);
             
-            // Verify move legality (king not in check after the move)
-            if (CheckValidator.isKingInCheck(board, board.getSideToMove().opposite())) {
-                board.undoMakeMove(move);
-                continue;
-            }
+            // Verify move legality (king not in check after the move) redundant check, but safer than relying on MoveGenerator's legality checks alone
+//            if (CheckValidator.isKingInCheck(board, board.getSideToMove().opposite())) {
+//                board.undoMakeMove(move);
+//                continue;
+//            }
             int score;
             
             // Principal Variation Search
@@ -314,7 +312,7 @@ public class SearchEngine {
                 
                 // If it fails high and we reduced, search again at full depth
                 if (score > alpha && reduction > 0) {
-                    score = -alphaBeta(board, depth - 1, ply + 1, -alpha - 1, -alpha, true);
+                    score = -alphaBeta(board, depth - 1, ply + 1, -beta, -alpha, true);
                 }
                 
                 // If still fails high, do full window search
@@ -329,15 +327,15 @@ public class SearchEngine {
                 bestScoreFound = score;
                 bestMoveFound = move;
                 
+                // Always track the best move at root so we have a valid move even if time expires
+                if (ply == 0) {
+                    bestMove = move;
+                }
+                
                 if (score > alpha) {
                     alpha = score;
                     raisedAlpha = true;
                     entryType = TranspositionTable.EntryType.EXACT;
-                    
-                    // Update best move at root
-                    if (ply == 0) {
-                        bestMove = move;
-                    }
                 }
                 
                 if (alpha >= beta) {
@@ -356,7 +354,7 @@ public class SearchEngine {
         }
         
         // Store in transposition table
-        transpositionTable.store(zobristKey, depth, bestScoreFound, entryType, bestMoveFound);
+        transpositionTable.store(zobristKey, depth, bestScoreFound,  ply, entryType, bestMoveFound);
         
         return bestScoreFound;
     }
@@ -398,25 +396,27 @@ public class SearchEngine {
         List<Move> captureMoves = generateCaptureMoves(board);
         
         // Delta pruning: skip if we can't possibly reach alpha
-        int bigDelta = PieceType.QUEEN.getValue();
-        if (standPat + bigDelta < alpha) {
+// 1. Calculate the maximum possible gain from any single move.
+        // We use Queen Value + a safety margin (e.g., 200).
+        int safetyMargin = 200;
+        int maxGain = PieceType.QUEEN.getValue() + safetyMargin;
+
+        // 2. If even gaining a Queen doesn't help reach alpha, we can safely prune.
+        // CRITICAL: Only prune if the side to move is NOT in check.
+        boolean inCheck = CheckValidator.isKingInCheck(board, board.getSideToMove());
+        if (!inCheck && (standPat + maxGain < alpha)) {
             return alpha;
         }
         
         for (Move move : captureMoves) {
-            // SEE pruning: skip bad captures in quiescence
-            if (!MoveOrdering.isGoodCapture(board, move)) {
-                continue;
-            }
-            
             // OPTIMIZED: makeMove/undoMakeMove instead of board.copy()
             board.makeMove(move);
             
-            // Prune if move leaves king in check (illegal)
-            if (CheckValidator.isKingInCheck(board, board.getSideToMove().opposite())) {
-                board.undoMakeMove(move);
-                continue;
-            }
+            // Prune if move leaves king in check (illegal) - seems redundant, comment out for now
+//            if (CheckValidator.isKingInCheck(board, board.getSideToMove().opposite())) {
+//                board.undoMakeMove(move);
+//                continue;
+//            }
             
             int score = -quiescence(board, ply + 1, -beta, -alpha);
             
@@ -583,51 +583,25 @@ public class SearchEngine {
     public void clearTranspositionTable() {
         transpositionTable.clear();
     }
-    
+
     /**
-     * Result of a search.
-     */
-    public static class SearchResult {
-        public final Move bestMove;
-        public final int score;
-        public final long nodesSearched;
-        public final long qNodesSearched;
-        
-        public SearchResult(Move bestMove, int score, long nodesSearched, long qNodesSearched) {
-            this.bestMove = bestMove;
-            this.score = score;
-            this.nodesSearched = nodesSearched;
-            this.qNodesSearched = qNodesSearched;
-        }
+         * Result of a search.
+         */
+        public record SearchResult(Move bestMove, int score, long nodesSearched, long qNodesSearched) {
     }
-    
+
     /**
-     * Search statistics.
-     */
-    public static class SearchStatistics {
-        public final long nodesSearched;
-        public final long qNodesSearched;
-        public final long ttHits;
-        public final long ttCutoffs;
-        public final long betaCutoffs;
-        public final long nullMoveCutoffs;
-        
-        public SearchStatistics(long nodesSearched, long qNodesSearched, long ttHits,
-                              long ttCutoffs, long betaCutoffs, long nullMoveCutoffs) {
-            this.nodesSearched = nodesSearched;
-            this.qNodesSearched = qNodesSearched;
-            this.ttHits = ttHits;
-            this.ttCutoffs = ttCutoffs;
-            this.betaCutoffs = betaCutoffs;
-            this.nullMoveCutoffs = nullMoveCutoffs;
-        }
-        
+         * Search statistics.
+         */
+        public record SearchStatistics(long nodesSearched, long qNodesSearched, long ttHits, long ttCutoffs,
+                                       long betaCutoffs, long nullMoveCutoffs) {
+
         @Override
-        public String toString() {
-            return String.format(
-                "Nodes: %d (Q: %d), TT Hits: %d, TT Cutoffs: %d, Beta Cutoffs: %d, NMP Cutoffs: %d",
-                nodesSearched, qNodesSearched, ttHits, ttCutoffs, betaCutoffs, nullMoveCutoffs
-            );
+            public String toString() {
+                return String.format(
+                        "Nodes: %d (Q: %d), TT Hits: %d, TT Cutoffs: %d, Beta Cutoffs: %d, NMP Cutoffs: %d",
+                        nodesSearched, qNodesSearched, ttHits, ttCutoffs, betaCutoffs, nullMoveCutoffs
+                );
+            }
         }
-    }
 }

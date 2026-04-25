@@ -1,4 +1,5 @@
 package search;
+import board.Evaluator;
 import piece.PieceColor;
 import piece.Piece;
 import piece.PieceType;
@@ -91,7 +92,7 @@ public class TranspositionTable {
     /**
      * Stores a position in the transposition table.
      */
-    public void store(long zobristKey, int depth, int score, EntryType type, Move bestMove) {
+    public void store(long zobristKey, int depth, int score,int ply,  EntryType type, Move bestMove) {
         int index = getIndex(zobristKey);
         TTEntry entry = table[index];
         
@@ -104,11 +105,14 @@ public class TranspositionTable {
                                entry.zobristKey == zobristKey ||
                                entry.age < currentAge ||
                                depth > entry.depth;
-        
+        int scoreToStore = score;
+        if (score > Evaluator.CHECKMATE_SCORE - 1000) scoreToStore = score + ply;
+        else if (score < -Evaluator.CHECKMATE_SCORE + 1000) scoreToStore = score - ply;
+
         if (shouldReplace) {
             entry.zobristKey = zobristKey;
             entry.depth = depth;
-            entry.score = score;
+            entry.score = scoreToStore;
             entry.type = type;
             entry.bestMove = bestMove;
             entry.age = currentAge;

@@ -7,7 +7,6 @@ import board.BitBoard;
 import move.CheckValidator;
 import move.Move;
 import move.MoveGenerator;
-import move.MoveValidator;
 import piece.PieceColor;
 /**
  * UCI (Universal Chess Interface) implementation for the chess engine.
@@ -214,8 +213,8 @@ public class UCIInterface {
 
             SearchEngine.SearchResult result = searchEngine.search(board, finalDepth, finalTimeLimit);
             
-            if (result.bestMove != null) {
-                System.out.println("bestmove " + result.bestMove.toUCI());
+            if (result.bestMove() != null) {
+                System.out.println("bestmove " + result.bestMove().toUCI());
             } else {
                 // No legal moves (checkmate or stalemate)
                 System.out.println("bestmove 0000");

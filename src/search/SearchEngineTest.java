@@ -34,11 +34,11 @@ public class SearchEngineTest {
         SearchEngine.SearchResult result = engine.search(board, 5, 10000); // 10 second limit
         
         System.out.println("\n=== Search Complete ===");
-        System.out.println("Best move: " + (result.bestMove != null ? result.bestMove.toUCI() : "none"));
-        System.out.println("Score: " + result.score + " centipawns");
-        System.out.println("Nodes searched: " + result.nodesSearched);
-        System.out.println("Q-nodes searched: " + result.qNodesSearched);
-        System.out.println("Total nodes: " + (result.nodesSearched + result.qNodesSearched));
+        System.out.println("Best move: " + (result.bestMove() != null ? result.bestMove().toUCI() : "none"));
+        System.out.println("Score: " + result.score() + " centipawns");
+        System.out.println("Nodes searched: " + result.nodesSearched());
+        System.out.println("Q-nodes searched: " + result.qNodesSearched());
+        System.out.println("Total nodes: " + (result.nodesSearched() + result.qNodesSearched()));
         
         SearchEngine.SearchStatistics stats = engine.getStatistics();
         System.out.println("\n" + stats);
@@ -61,9 +61,9 @@ public class SearchEngineTest {
         System.out.println("Searching to depth 4...\n");
         SearchEngine.SearchResult result1 = engine.search(board1, 4, 5000);
         
-        System.out.println("\nBest move: " + (result1.bestMove != null ? result1.bestMove.toUCI() : "none"));
+        System.out.println("\nBest move: " + (result1.bestMove() != null ? result1.bestMove().toUCI() : "none"));
         System.out.println("Expected: A move capturing the queen on h4");
-        System.out.println("Score: " + result1.score + " cp");
+        System.out.println("Score: " + result1.score() + " cp");
         
         // Test position 2: Fork opportunity
         System.out.println("\n\nPosition 2: Knight fork opportunity");
@@ -74,8 +74,8 @@ public class SearchEngineTest {
         System.out.println("Searching to depth 5...\n");
         SearchEngine.SearchResult result2 = engine.search(board2, 5, 5000);
         
-        System.out.println("\nBest move: " + (result2.bestMove != null ? result2.bestMove.toUCI() : "none"));
-        System.out.println("Score: " + result2.score + " cp");
+        System.out.println("\nBest move: " + (result2.bestMove() != null ? result2.bestMove().toUCI() : "none"));
+        System.out.println("Score: " + result2.score() + " cp");
         System.out.println();
     }
     
@@ -95,10 +95,10 @@ public class SearchEngineTest {
         System.out.println("Searching to depth 3...\n");
         SearchEngine.SearchResult result1 = engine.search(board1, 3, 5000);
         
-        System.out.println("\nBest move: " + (result1.bestMove != null ? result1.bestMove.toUCI() : "none"));
+        System.out.println("\nBest move: " + (result1.bestMove() != null ? result1.bestMove().toUCI() : "none"));
         System.out.println("Expected: Rf8# (back rank mate)");
-        System.out.println("Score: " + result1.score + " cp");
-        System.out.println("Is mate score: " + Evaluator.isMateScore(result1.score));
+        System.out.println("Score: " + result1.score() + " cp");
+        System.out.println("Is mate score: " + Evaluator.isMateScore(result1.score()));
         
         // Mate in 2 (more complex)
         System.out.println("\n\nMate in 2:");
@@ -109,9 +109,9 @@ public class SearchEngineTest {
         System.out.println("Searching to depth 5...\n");
         SearchEngine.SearchResult result2 = engine.search(board2, 5, 5000);
         
-        System.out.println("\nBest move: " + (result2.bestMove != null ? result2.bestMove.toUCI() : "none"));
-        System.out.println("Score: " + result2.score + " cp");
-        System.out.println("Is mate score: " + Evaluator.isMateScore(result2.score));
+        System.out.println("\nBest move: " + (result2.bestMove() != null ? result2.bestMove().toUCI() : "none"));
+        System.out.println("Score: " + result2.score() + " cp");
+        System.out.println("Is mate score: " + Evaluator.isMateScore(result2.score()));
         System.out.println();
     }
     
@@ -134,25 +134,25 @@ public class SearchEngineTest {
         
         System.out.println("\n=== Search Complete ===");
         System.out.println("Time taken: " + elapsed + " ms");
-        System.out.println("Best move: " + (result.bestMove != null ? result.bestMove.toUCI() : "none"));
-        System.out.println("Score: " + result.score + " centipawns");
+        System.out.println("Best move: " + (result.bestMove() != null ? result.bestMove().toUCI() : "none"));
+        System.out.println("Score: " + result.score() + " centipawns");
         System.out.println();
         
         SearchEngine.SearchStatistics stats = engine.getStatistics();
         System.out.println("=== Detailed Statistics ===");
         System.out.println(stats);
         
-        long totalNodes = result.nodesSearched + result.qNodesSearched;
+        long totalNodes = result.nodesSearched() + result.qNodesSearched();
         long nps = (totalNodes * 1000) / Math.max(elapsed, 1);
         
         System.out.println("\nPerformance:");
         System.out.println("  Nodes per second: " + String.format("%,d", nps));
         System.out.println("  TT hit rate: " + String.format("%.2f%%", 
-            (stats.ttHits * 100.0) / Math.max(result.nodesSearched, 1)));
+            (stats.ttHits() * 100.0) / Math.max(result.nodesSearched(), 1)));
         System.out.println("  Beta cutoff rate: " + String.format("%.2f%%", 
-            (stats.betaCutoffs * 100.0) / Math.max(result.nodesSearched, 1)));
+            (stats.betaCutoffs() * 100.0) / Math.max(result.nodesSearched(), 1)));
         System.out.println("  Null move cutoff rate: " + String.format("%.2f%%", 
-            (stats.nullMoveCutoffs * 100.0) / Math.max(result.nodesSearched, 1)));
+            (stats.nullMoveCutoffs() * 100.0) / Math.max(result.nodesSearched(), 1)));
         System.out.println();
         
         // Test iterative deepening progression
@@ -165,12 +165,12 @@ public class SearchEngineTest {
             result = engine.search(board, depth, 5000);
             elapsed = System.currentTimeMillis() - startTime;
             
-            totalNodes = result.nodesSearched + result.qNodesSearched;
+            totalNodes = result.nodesSearched() + result.qNodesSearched();
             nps = (totalNodes * 1000) / Math.max(elapsed, 1);
             
             System.out.printf("Depth %d: %s (%.2f sec, %,d nodes, %,d nps)\n",
                             depth, 
-                            result.bestMove != null ? result.bestMove.toUCI() : "none",
+                            result.bestMove() != null ? result.bestMove().toUCI() : "none",
                             elapsed / 1000.0,
                             totalNodes,
                             nps);
@@ -189,7 +189,7 @@ public class SearchEngineTest {
         
         SearchEngine.SearchResult result = engine.search(newBoard, 5, 3000);
         
-        System.out.println("Resulting score: " + (-result.score) + " cp");
-        System.out.println("Best reply: " + (result.bestMove != null ? result.bestMove.toUCI() : "none"));
+        System.out.println("Resulting score: " + (-result.score()) + " cp");
+        System.out.println("Best reply: " + (result.bestMove() != null ? result.bestMove().toUCI() : "none"));
     }
 }

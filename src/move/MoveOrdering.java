@@ -17,8 +17,15 @@ public class MoveOrdering {
     private static final int KILLER_MOVE_SCORE = 5000000;
     private static final int COUNTER_MOVE_SCORE = 4000000;
     private static final int EQUAL_CAPTURE_SCORE = 1000000;
-    private static final int LOSING_CAPTURE_SCORE = 500000;
-    
+    private static final int LOSING_CAPTURE_SCORE = 2000000;  // Above history (max 1M), below equal captures
+
+
+//    PAWN(100),
+//    KNIGHT(320),
+//    BISHOP(330),
+//    ROOK(500),
+//    QUEEN(900),
+//    KING(20000);
     // MVV-LVA (Most Valuable Victim - Least Valuable Attacker) values
     private static final int[] VICTIM_VALUES = {100, 320, 330, 500, 900, 20000};
     private static final int[] ATTACKER_VALUES = {10, 32, 33, 50, 90, 200};
@@ -58,7 +65,7 @@ public class MoveOrdering {
     private static int scoreMove(BitBoard board, Move move, Move ttMove, 
                                  Move[] killerMoves, Move counterMove, int[][] historyTable) {
         // TT move gets highest priority
-        if (ttMove != null && move.equals(ttMove)) {
+        if (move.equals(ttMove)) {
             return TT_MOVE_SCORE;
         }
         
@@ -99,14 +106,14 @@ public class MoveOrdering {
         // Killer moves
         if (killerMoves != null) {
             for (Move killer : killerMoves) {
-                if (killer != null && move.equals(killer)) {
+                if (move.equals(killer)) {
                     return KILLER_MOVE_SCORE;
                 }
             }
         }
         
         // Counter move
-        if (counterMove != null && move.equals(counterMove)) {
+        if (move.equals(counterMove)) {
             return COUNTER_MOVE_SCORE;
         }
         

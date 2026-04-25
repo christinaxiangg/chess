@@ -163,25 +163,19 @@ public class Evaluator {
      * Gets the piece-square table value for a piece at a given square.
      */
     private static int getPieceSquareValue(Piece piece, int square, boolean isEndGame) {
-        // For black pieces, flip the square vertically
+        // For white pieces, flip the square vertically because it from white visual board perspective,
+        // the array is actually indexed from black's perspective (0 is a1, 63 is h8)
         int tableSquare = piece.isWhite() ? square : (63 - square);
-        
-        switch (piece.getType()) {
-            case PAWN:
-                return PAWN_TABLE[tableSquare];
-            case KNIGHT:
-                return KNIGHT_TABLE[tableSquare];
-            case BISHOP:
-                return BISHOP_TABLE[tableSquare];
-            case ROOK:
-                return ROOK_TABLE[tableSquare];
-            case QUEEN:
-                return QUEEN_TABLE[tableSquare];
-            case KING:
-                return isEndGame ? KING_END_GAME_TABLE[tableSquare] : KING_MIDDLE_GAME_TABLE[tableSquare];
-            default:
-                return 0;
-        }
+
+        return switch (piece.getType()) {
+            case PAWN -> PAWN_TABLE[tableSquare];
+            case KNIGHT -> KNIGHT_TABLE[tableSquare];
+            case BISHOP -> BISHOP_TABLE[tableSquare];
+            case ROOK -> ROOK_TABLE[tableSquare];
+            case QUEEN -> QUEEN_TABLE[tableSquare];
+            case KING -> isEndGame ? KING_END_GAME_TABLE[tableSquare] : KING_MIDDLE_GAME_TABLE[tableSquare];
+            default -> 0;
+        };
     }
     
     /**

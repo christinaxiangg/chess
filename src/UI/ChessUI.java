@@ -13,7 +13,6 @@ import move.MoveGenerator;
 import search.*;
 import move.*;
 import piece.*;
-import board.ZobristHash;
 
 /**
  * Production-quality chessboard UI with move validation, engine integration,
@@ -61,6 +60,10 @@ public class ChessUI extends JFrame {
     private boolean darkMode = false;
     private JButton darkModeButton;
     private boolean gameOver = false;
+    private boolean playbackMode = false;
+    private int currentPlaybackIndex = 0;
+    private JButton backButton;
+    private JButton forwardButton;
 
     public ChessUI() {
         super("Chess Engine");
@@ -164,10 +167,21 @@ public class ChessUI extends JFrame {
         darkModeButton = new JButton("Dark Mode");
         darkModeButton.addActionListener(e -> toggleDarkMode());
 
+        // Playback buttons
+        backButton = new JButton("◀ Back");
+        backButton.setEnabled(false);
+        backButton.addActionListener(e -> goBack());
+
+        forwardButton = new JButton("Forward ▶");
+        forwardButton.setEnabled(false);
+        forwardButton.addActionListener(e -> goForward());
+
         panel.add(playerModeCombo);
         panel.add(newGameButton);
         panel.add(flipButton);
         panel.add(undoButton);
+        panel.add(backButton);
+        panel.add(forwardButton);
         panel.add(darkModeButton);
 
         return panel;
@@ -300,8 +314,8 @@ public class ChessUI extends JFrame {
     private class BoardMouseListener extends MouseAdapter {
         @Override
         public void mousePressed(MouseEvent e) {
-            if (engineThinking) {
-                return; // Don't allow moves while engine is thinking
+            if (engineThinking || playbackMode) {
+                return; // Don't allow moves while engine is thinking or in playback mode
             }
 
             int file = e.getX() / SQUARE_SIZE;
@@ -501,6 +515,8 @@ public class ChessUI extends JFrame {
             } else {
                 JOptionPane.showMessageDialog(this, "Stalemate! The game is a draw.", "Game Over", JOptionPane.INFORMATION_MESSAGE);
             }
+            // Enable playback mode when game is over
+            enablePlaybackMode();
         }
     }
 
@@ -531,8 +547,8 @@ public class ChessUI extends JFrame {
                     SearchEngine.SearchResult result = engine.search(boardCopy, 14, 4000);
 
                     SwingUtilities.invokeLater(() -> {
-                        if (result.bestMove != null) {
-                            makeMove(result.bestMove);
+                        if (result.bestMove() != null) {
+                            makeMove(result.bestMove());
                         }
                         engineThinking = false;
                         repaint();
@@ -549,8 +565,7 @@ public class ChessUI extends JFrame {
     }
 
     private void onPlayerModeChanged() {
-        // Reset game when mode changes
-        startNewGame();
+        // Mode will be applied on next new game
     }
 
     private void flipBoard() {
@@ -618,10 +633,17 @@ public class ChessUI extends JFrame {
         clearSelection();
         moveHistory.clear();
         moveListModel.clear();
+        gameOver = false;
+        playbackMode = false;
+        currentPlaybackIndex = 0;
 
         // Reset engines
         whiteEngine = new SearchEngine(128);
         blackEngine = new SearchEngine(128);
+
+        // Disable playback buttons
+        backButton.setEnabled(false);
+        forwardButton.setEnabled(false);
 
         updateStatus();
         repaint();
@@ -676,6 +698,66 @@ public class ChessUI extends JFrame {
                 moveListModel.setElementAt(lastEntry + " " + move.toUCI(), lastIndex);
             }
         }
+    }
+
+    private void enablePlaybackMode() {
+        playbackMode = true;
+        currentPlaybackIndex = moveHistory.size();
+        updatePlaybackButtons();
+        statusLabel.setText("Game Over - Playback Mode");
+    }
+
+    private void goBack() {
+        if (!playbackMode || currentPlaybackIndex <= 0) {
+            return;
+        }
+
+        currentPlaybackIndex--;
+        updateBoardToPlaybackPosition();
+        updatePlaybackButtons();
+    }
+
+    private void goForward() {
+        if (!playbackMode || currentPlaybackIndex >= moveHistory.size()) {
+            return;
+        }
+
+        currentPlaybackIndex++;
+        updateBoardToPlaybackPosition();
+        updatePlaybackButtons();
+    }
+
+    private void updateBoardToPlaybackPosition() {
+        // Reset board to starting position
+        board = BitBoard.startingPosition();
+        clearSelection();
+
+        // Replay all moves up to current playback index
+        for (int i = 0; i < currentPlaybackIndex; i++) {
+            board.makeMove(moveHistory.get(i));
+        }
+
+        // Update last move
+        lastMove = currentPlaybackIndex > 0 ? moveHistory.get(currentPlaybackIndex - 1) : null;
+
+        // Rebuild move list and highlight current position
+        rebuildMoveList();
+        
+        // Update status
+        if (currentPlaybackIndex == moveHistory.size()) {
+            statusLabel.setText("Game Over - Playback Mode (End of game)");
+        } else {
+            PieceColor sideToMove = board.getSideToMove();
+            String color = sideToMove == PieceColor.WHITE ? "White" : "Black";
+            statusLabel.setText("Playback Mode - " + color + " to move");
+        }
+
+        repaint();
+    }
+
+    private void updatePlaybackButtons() {
+        backButton.setEnabled(currentPlaybackIndex > 0);
+        forwardButton.setEnabled(currentPlaybackIndex < moveHistory.size());
     }
 
     public static void main(String[] args) {
