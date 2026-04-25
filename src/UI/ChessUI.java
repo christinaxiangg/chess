@@ -447,11 +447,15 @@ public class ChessUI extends JFrame {
         // Update status
         updateStatus();
 
-        // Check for game end
-        checkGameEnd();
+        // Repaint the board first to show the move
+        repaint();
 
-        // Trigger engine move if needed
-        triggerEngineMove();
+        // Check for game end after repaint
+        SwingUtilities.invokeLater(() -> {
+            checkGameEnd();
+            // Trigger engine move if needed
+            triggerEngineMove();
+        });
     }
 
     private void updateMoveList() {
