@@ -22,11 +22,24 @@ import board.ZobristHash;
 public class ChessUI extends JFrame {
     private static final int SQUARE_SIZE = 80;
     private static final int BOARD_SIZE = SQUARE_SIZE * 8;
+    
+    // Light mode colors
     private static final Color LIGHT_SQUARE = new Color(240, 217, 181);
     private static final Color DARK_SQUARE = new Color(181, 136, 99);
     private static final Color HIGHLIGHT_COLOR = new Color(255, 255, 0, 128);
     private static final Color LAST_MOVE_COLOR = new Color(155, 199, 0, 128);
     private static final Color SELECTED_SQUARE_COLOR = new Color(106, 176, 76, 180);
+    
+    // Dark mode colors
+    private static final Color DARK_LIGHT_SQUARE = new Color(118, 150, 86);
+    private static final Color DARK_DARK_SQUARE = new Color(238, 238, 210);
+    private static final Color DARK_HIGHLIGHT_COLOR = new Color(255, 255, 0, 128);
+    private static final Color DARK_LAST_MOVE_COLOR = new Color(155, 199, 0, 128);
+    private static final Color DARK_SELECTED_SQUARE_COLOR = new Color(106, 176, 76, 180);
+    private static final Color DARK_BACKGROUND = new Color(30, 30, 30);
+    private static final Color DARK_TEXT = new Color(220, 220, 220);
+    private static final Color DARK_PANEL = new Color(45, 45, 45);
+    private static final Color DARK_BORDER = new Color(70, 70, 70);
 
     private BitBoard board;
     private Move lastMove;
@@ -45,6 +58,8 @@ public class ChessUI extends JFrame {
     private SearchEngine blackEngine;
     private ExecutorService engineExecutor;
     private boolean engineThinking = false;
+    private boolean darkMode = false;
+    private JButton darkModeButton;
 
     public ChessUI() {
         super("Chess Engine");
@@ -145,10 +160,14 @@ public class ChessUI extends JFrame {
         undoButton = new JButton("Undo");
         undoButton.addActionListener(e -> undoLastMove());
 
+        darkModeButton = new JButton("Dark Mode");
+        darkModeButton.addActionListener(e -> toggleDarkMode());
+
         panel.add(playerModeCombo);
         panel.add(newGameButton);
         panel.add(flipButton);
         panel.add(undoButton);
+        panel.add(darkModeButton);
 
         return panel;
     }
@@ -175,8 +194,10 @@ public class ChessUI extends JFrame {
                     int x = file * SQUARE_SIZE;
                     int y = (7 - rank) * SQUARE_SIZE;
 
-                    // Determine square color
-                    Color squareColor = ((file + rank) % 2 == 0) ? LIGHT_SQUARE : DARK_SQUARE;
+                    // Determine square color based on mode
+                    Color lightSquare = darkMode ? DARK_LIGHT_SQUARE : LIGHT_SQUARE;
+                    Color darkSquare = darkMode ? DARK_DARK_SQUARE : DARK_SQUARE;
+                    Color squareColor = ((file + rank) % 2 == 0) ? lightSquare : darkSquare;
                     g2d.setColor(squareColor);
                     g2d.fillRect(x, y, SQUARE_SIZE, SQUARE_SIZE);
 
@@ -191,7 +212,7 @@ public class ChessUI extends JFrame {
 
                         if ((displayRank == fromRank && displayFile == fromFile) ||
                             (displayRank == toRank && displayFile == toFile)) {
-                            g2d.setColor(LAST_MOVE_COLOR);
+                            g2d.setColor(darkMode ? DARK_LAST_MOVE_COLOR : LAST_MOVE_COLOR);
                             g2d.fillRect(x, y, SQUARE_SIZE, SQUARE_SIZE);
                         }
                     }
@@ -201,7 +222,7 @@ public class ChessUI extends JFrame {
                         int selRank = selectedSquare / 8;
                         int selFile = selectedSquare % 8;
                         if (displayRank == selRank && displayFile == selFile) {
-                            g2d.setColor(SELECTED_SQUARE_COLOR);
+                            g2d.setColor(darkMode ? DARK_SELECTED_SQUARE_COLOR : SELECTED_SQUARE_COLOR);
                             g2d.fillRect(x, y, SQUARE_SIZE, SQUARE_SIZE);
                         }
                     }
@@ -209,7 +230,7 @@ public class ChessUI extends JFrame {
                     // Highlight legal destination squares
                     int sq = displayRank * 8 + displayFile;
                     if (legalTargets.contains(sq)) {
-                        g2d.setColor(HIGHLIGHT_COLOR);
+                        g2d.setColor(darkMode ? DARK_HIGHLIGHT_COLOR : HIGHLIGHT_COLOR);
                         g2d.fillRect(x, y, SQUARE_SIZE, SQUARE_SIZE);
                     }
 
@@ -245,7 +266,9 @@ public class ChessUI extends JFrame {
 
         private void drawCoordinates(Graphics2D g2d, int file, int rank, int x, int y) {
             g2d.setFont(new Font("Arial", Font.PLAIN, 10));
-            g2d.setColor(((file + rank) % 2 == 0) ? DARK_SQUARE : LIGHT_SQUARE);
+            Color lightSquare = darkMode ? DARK_LIGHT_SQUARE : LIGHT_SQUARE;
+            Color darkSquare = darkMode ? DARK_DARK_SQUARE : DARK_SQUARE;
+            g2d.setColor(((file + rank) % 2 == 0) ? darkSquare : lightSquare);
 
             // Draw file letters (a-h) at the bottom
             if (rank == 0) {
@@ -348,7 +371,7 @@ public class ChessUI extends JFrame {
                 if (move != null) {
                     makeMove(move);
                     clearSelection();
-                    statusLabel.setForeground(Color.BLACK);
+                    statusLabel.setForeground(darkMode ? DARK_TEXT : Color.BLACK);
                 } else {
                     statusLabel.setText("Illegal move! Try again.");
                     statusLabel.setForeground(Color.RED);
@@ -456,7 +479,7 @@ public class ChessUI extends JFrame {
             statusLabel.setForeground(Color.RED);
         } else {
             statusLabel.setText(color + " to move");
-            statusLabel.setForeground(Color.BLACK);
+            statusLabel.setForeground(darkMode ? DARK_TEXT : Color.BLACK);
         }
     }
 
@@ -526,6 +549,60 @@ public class ChessUI extends JFrame {
     private void flipBoard() {
         boardFlipped = !boardFlipped;
         repaint();
+    }
+
+    private void toggleDarkMode() {
+        darkMode = !darkMode;
+        darkModeButton.setText(darkMode ? "Light Mode" : "Dark Mode");
+        
+        // Update colors for all components
+        if (darkMode) {
+            // Set dark mode colors
+            setBackground(DARK_BACKGROUND);
+            statusLabel.setBackground(DARK_PANEL);
+            statusLabel.setForeground(DARK_TEXT);
+            moveList.setBackground(DARK_PANEL);
+            moveList.setForeground(DARK_TEXT);
+            moveList.setSelectionBackground(DARK_SELECTED_SQUARE_COLOR);
+            moveList.setSelectionForeground(Color.WHITE);
+        } else {
+            // Set light mode colors
+            setBackground(null);
+            statusLabel.setBackground(null);
+            statusLabel.setForeground(Color.BLACK);
+            moveList.setBackground(Color.WHITE);
+            moveList.setForeground(Color.BLACK);
+            moveList.setSelectionBackground(new Color(184, 207, 229));
+            moveList.setSelectionForeground(Color.BLACK);
+        }
+        
+        // Update all panel backgrounds
+        updatePanelColors(this.getContentPane(), darkMode);
+        
+        repaint();
+    }
+    
+    private void updatePanelColors(Container container, boolean isDark) {
+        for (Component comp : container.getComponents()) {
+            if (comp instanceof JPanel) {
+                JPanel panel = (JPanel) comp;
+                if (isDark) {
+                    panel.setBackground(DARK_PANEL);
+                } else {
+                    panel.setBackground(null);
+                }
+                updatePanelColors(panel, isDark);
+            } else if (comp instanceof JScrollPane) {
+                JScrollPane scroll = (JScrollPane) comp;
+                if (isDark) {
+                    scroll.setBackground(DARK_PANEL);
+                    scroll.getViewport().setBackground(DARK_PANEL);
+                } else {
+                    scroll.setBackground(null);
+                    scroll.getViewport().setBackground(Color.WHITE);
+                }
+            }
+        }
     }
 
     private void startNewGame() {
