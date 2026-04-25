@@ -91,13 +91,16 @@ public class MoveValidator {
      */
     public static boolean moveLeavesKingInCheck(BitBoard board, Move move) {
         // Make the move on a copy of the board
-        BitBoard tempBoard = board.copy();
-        tempBoard.makeMove(move);
+
+        board.makeMove(move);
         
         // Check if the player who just moved is now in check.
         // After makeMove, sideToMove has switched, so we check the color that just moved.
         PieceColor movedColor = board.getSideToMove();
-        return CheckValidator.isKingInCheck(tempBoard, movedColor);
+        boolean isInCheck =  CheckValidator.isKingInCheck(board, movedColor);
+        // Undo the move to restore original board state
+        board.undoMakeMove(move);
+        return isInCheck;
     }
     
     /**

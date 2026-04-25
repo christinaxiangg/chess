@@ -44,8 +44,12 @@ public class MoveOrdering {
             scores[i] = scoreMove(board, moves.get(i), ttMove, killerMoves, counterMove, historyTable);
         }
         
-        // Sort moves by score in descending order
-        quickSort(moves, scores, 0, moves.size() - 1);
+        // Use insertion sort for small arrays, quicksort for larger ones
+        if (moves.size() <= 16) {
+            insertionSort(moves, scores);
+        } else {
+            quickSort(moves, scores, 0, moves.size() - 1);
+        }
     }
     
     /**
@@ -134,6 +138,26 @@ public class MoveOrdering {
         }
     }
     
+    /**
+     * Insertion sort for small arrays (more efficient than quicksort).
+     */
+    private static void insertionSort(List<Move> moves, int[] scores) {
+        for (int i = 1; i < moves.size(); i++) {
+            int j = i;
+            while (j > 0 && scores[j] > scores[j - 1]) {
+                // Swap moves
+                Move tempMove = moves.get(j);
+                moves.set(j, moves.get(j - 1));
+                moves.set(j - 1, tempMove);
+                // Swap scores
+                int tempScore = scores[j];
+                scores[j] = scores[j - 1];
+                scores[j - 1] = tempScore;
+                j--;
+            }
+        }
+    }
+
     /**
      * Partition function for quick sort.
      */

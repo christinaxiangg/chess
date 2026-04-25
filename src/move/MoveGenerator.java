@@ -75,22 +75,52 @@ public class MoveGenerator {
      * Checks if a move is legal (doesn't leave king in check).
      */
     private static boolean isLegalMove(BitBoard board, Move move) {
-        BitBoard copy = board.copy();
-        copy.makeMove(move);
-        
         // Find our king position
         PieceColor us = board.getSideToMove();
+        board.makeMove(move);
         Piece ourKing = us == PieceColor.WHITE ? Piece.WHITE_KING : Piece.BLACK_KING;
-        List<Integer> kingSquares = copy.getPieces(ourKing);
-        
+        List<Integer> kingSquares = board.getPieces(ourKing);
+
         if (kingSquares.isEmpty()) {
-            return false; // King was captured (shouldn't happen in valid positions)
+            System.out.println("=== KING CAPTURE DEBUG ===");
+            System.out.println("Side that just moved: " + us);
+            System.out.println("Move that caused it: " + move);
+            System.out.println("Board after makeMove:");
+            board.print();
+            board.undoMakeMove(move);
+            System.out.println("Board after undoMakeMove (should be restored):");
+            board.print();
+            System.out.println("History:");
+            board.printHistory();  // we'll add this below
+            throw new RuntimeException("King was captured");
         }
         
         int kingSquare = kingSquares.get(0);
-        
-        // Check if king is under attack
-        return !isSquareAttacked(copy, kingSquare, us.opposite());
+        boolean attacked = isSquareAttacked(board, kingSquare, us.opposite());
+        // Only log when we're about to return TRUE for a king move
+        // (i.e. declaring a king move legal — this is where wrong calls sneak through)
+        if (!attacked && move.getTo() == kingSquare) {
+            Piece ourKingPiece = us == PieceColor.WHITE ? Piece.WHITE_KING : Piece.BLACK_KING;
+            if (board.getPiece(kingSquare) == ourKingPiece) {
+                long enemyPawns = board.getBitboard(
+                        us == PieceColor.WHITE ? Piece.BLACK_PAWN : Piece.WHITE_PAWN);
+                long pawnAttackMask = us == PieceColor.WHITE ?
+                        BLACK_PAWN_ATTACKS[kingSquare] : WHITE_PAWN_ATTACKS[kingSquare];
+                long pawnThreat = enemyPawns & pawnAttackMask;
+                if (pawnThreat != 0) {
+                    System.out.println("BUG: King move to " + Move.squareToString(kingSquare)
+                            + " passed as legal but enemy pawn on "
+                            + Move.squareToString(Long.numberOfTrailingZeros(pawnThreat))
+                            + " attacks it!");
+                    board.undoMakeMove(move);
+                    return false; // force-reject it
+                }
+            }
+        }
+
+        boolean isLegal = !attacked;
+        board.undoMakeMove(move);
+        return isLegal;
     }
     
     /**

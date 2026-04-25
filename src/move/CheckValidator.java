@@ -38,6 +38,7 @@ public class CheckValidator {
         List<Integer> kingSquares = board.getPieces(kingPiece);
         
         if (kingSquares.isEmpty()) {
+
             return false; // No king on board (shouldn't happen in valid position)
         }
         
@@ -82,12 +83,27 @@ public class CheckValidator {
     }
     
     /**
-     * Checks if a square is attacked by an enemy pawn.
+     * Why I think wrong one make more sense than your correct one?8:04 AMClaude responded: That's a very natural intuition — here's why it feels backwards:That's a very natural intuition — here's why it feels backwards:
+     * What your brain thinks: "I want white pawn attacks, so I use WHITE_PAWN_ATTACKS."
+     * What the code actually needs: You're not asking "where does a white pawn on this square attack?" — you're asking "which squares would a white pawn have to be on, to be attacking THIS square?"
+     * Think of it as shooting a ray backwards from the king to find the attacker.
+     * A white pawn on d7 attacks e8 diagonally forward. So to ask "is e8 attacked by a white pawn?", you stand on e8 and look backwards the way a white pawn would move — which is downward, like a black pawn would move. If you find a white pawn there, it's attacking you.
+     * A concrete example:
+     * WHITE_PAWN_ATTACKS[e8] → looks UP from e8 → off the board → empty → 0
+     * BLACK_PAWN_ATTACKS[e8] → looks DOWN from e8 → d7, f7 → finds white pawn on d7 ✓
+     * So the rule is:
+     * To find if a white pawn attacks a square → use black pawn pattern (look backwards/downward)
+     * To find if a black pawn attacks a square → use white pawn pattern (look backwards/upward)
+     * The same "backwards ray" logic is why MoveGenerator.isSquareAttacked works correctly for all sliding pieces too — you cast rays outward from the target square and check if you hit the right attacker, rather than iterating over all enemy pieces.
      */
     private static boolean isAttackedByPawn(BitBoard board, int square, PieceColor attackingColor) {
-        long attackMask = attackingColor == PieceColor.WHITE ? 
-            WHITE_PAWN_ATTACKS[square] : BLACK_PAWN_ATTACKS[square];
-        
+// WRONG:
+//        long attackMask = attackingColor == PieceColor.WHITE ?
+//                WHITE_PAWN_ATTACKS[square] : BLACK_PAWN_ATTACKS[square];
+
+// CORRECT:
+        long attackMask = attackingColor == PieceColor.WHITE ?
+                BLACK_PAWN_ATTACKS[square] : WHITE_PAWN_ATTACKS[square];
         Piece attackingPawn = Piece.getPiece(attackingColor, PieceType.PAWN);
         long pawnBitboard = board.getBitboard(attackingPawn);
         

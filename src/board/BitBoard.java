@@ -224,9 +224,10 @@ public class BitBoard {
         private final Piece movedPiece;
         private final long hash;
         private final Move move;
+        private final String fenBefore;
         public BoardState(int castlingRights, int enPassantSquare, int halfMoveClock, 
                           int fullMoveNumber, PieceColor sideToMove, Piece capturedPiece, 
-                          Piece movedPiece, long hash, Move move) {
+                          Piece movedPiece, long hash, Move move, String fenBefore) {
             this.castlingRights = castlingRights;
             this.enPassantSquare = enPassantSquare;
             this.halfMoveClock = halfMoveClock;
@@ -236,6 +237,7 @@ public class BitBoard {
             this.movedPiece = movedPiece;
             this.hash = hash;
             this.move = move;
+            this.fenBefore = fenBefore;
         }
     }
 
@@ -246,10 +248,21 @@ public class BitBoard {
         int from = move.getFrom();
         int to = move.getTo();
         Piece piece = getPiece(from);
-        
-        if (piece == null) return;
-        
 
+        if (piece == null) {
+            // Print full move history before crashing
+            System.out.println("=== MOVE HISTORY (most recent last) ===");
+            List<BoardState> states = new ArrayList<>(stateHistory);
+            for (int i = 0; i < states.size(); i++) {
+                BoardState s = states.get(i);
+                System.out.println("  " + (i + 1) + ". " + s.sideToMove + " played " + s.move );
+            }
+            System.out.println("makeMove Attempting to move a piece from an empty square:" + Move.squareToString(from) + " move=" + move + " fen=" + toFEN());
+            throw new RuntimeException(
+                    "makeMove: no piece at " + Move.squareToString(from) +
+                            " move=" + move + " fen=" + toFEN()
+            );
+        }
         
         // Capture state BEFORE any modifications
         Piece capturedPiece = null;
@@ -272,7 +285,7 @@ public class BitBoard {
             capturedPiece,
             piece,  // The original piece before promotion
             currentHash,
-                move
+                move, toFEN()
         ));
 
         // Handle captures
@@ -342,8 +355,16 @@ public class BitBoard {
             System.out.println("undoMakeMove called on empty history! Move: " + move);
             return;
         }
-        
-        BoardState state = stateHistory.pop();
+        BoardState state = stateHistory.peek(); // peek first, don't pop yet
+        if (state.move == null) {
+            // This is a null move entry — we're calling undoMakeMove on a null move slot!
+            System.out.println("ERROR: undoMakeMove called but top of stack is a null move entry!");
+            System.out.println("Tried to undo: " + move + " FEN: " + toFEN()
+            );
+            printHistory();
+            throw new RuntimeException("Stack corruption: null move entry at top");
+        }
+         stateHistory.pop();
         Move move2 = state.move; // Use the stored move, not a caller-supplied one
         if (!move.equals(move2)) {
             System.out.println("Warning: undoMakeMove move mismatch! Expected: " + move2 + ", got: " + move);
@@ -659,4 +680,47 @@ public class BitBoard {
             return squares.size();
         }
     }
+    public void makeNullMove() {
+        stateHistory.push(new BoardState(
+                castlingRights,
+                enPassantSquare,
+                halfMoveClock,
+                fullMoveNumber,
+                sideToMove,
+                null,
+                null,
+                currentHash,
+                null,
+                toFEN()
+        ));
+        enPassantSquare = -1;
+        sideToMove = sideToMove.opposite();
+        halfMoveClock++;
+    }
+
+    public void undoNullMove() {
+        BoardState state = stateHistory.peek();
+        if (state.move != null) {
+            throw new RuntimeException(
+                    "undoNullMove called but top of stack is a real move entry: " + state.move
+            );
+        }
+        stateHistory.pop();
+        sideToMove = state.sideToMove;
+        enPassantSquare = state.enPassantSquare;
+        halfMoveClock = state.halfMoveClock;
+        castlingRights = state.castlingRights;
+        currentHash = state.hash;
+    }
+
+    public void printHistory() {
+        List<BoardState> states = new ArrayList<>(stateHistory);
+        System.out.println("=== MOVE HISTORY (" + states.size() + " moves) ===");
+        for (int i = 0; i < states.size(); i++) {
+            BoardState s = states.get(i);
+            System.out.println("  " + (i + 1) + ". " + s.sideToMove + " played " + s.move
+                    + " | FEN before: " + s.fenBefore);
+        }
+    }
+
 }

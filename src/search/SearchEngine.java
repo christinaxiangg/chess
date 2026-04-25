@@ -62,6 +62,26 @@ public class SearchEngine {
     
     // Selective depth tracking for deep searches
     private int selectiveDepth;
+
+    private OpeningBook openingBook;
+
+    /**
+     * Loads a Polyglot opening book from the given path.
+     * Call once at startup, before any searches.
+     *
+     * @param path path to a .bin Polyglot book file
+     *             (e.g. "books/Performance.bin" or "books/Titans.bin")
+     */
+    public void loadOpeningBook(String path) {
+        try {
+            openingBook = new OpeningBook(path);
+            System.out.println("info string Opening book loaded: " + path);
+        } catch (java.io.IOException e) {
+            System.out.println("info string Opening book NOT loaded (" + e.getMessage() + ")");
+            openingBook = null;
+        }
+    }
+
     /**
      * Creates a new search engine with specified TT size.
      */
@@ -77,6 +97,18 @@ public class SearchEngine {
      * Searches for the best move in the given position.
      */
     public SearchResult search(BitBoard board, int depthLimit, long timeLimitMs) {
+
+        // ── Opening book probe ──────────────────────────────────────────────
+        if (openingBook != null && openingBook.isLoaded()) {
+            Move bookMove = openingBook.probe(board);
+            if (bookMove != null) {
+                System.out.println("info string Book move: " + bookMove.toUCI());
+                // Score 0 is conventional for book moves.
+                return new SearchResult(bookMove, 0, 0, 0);
+            }
+        }
+        // ── End book probe ──────────────────────────────────────────────────
+
         this.startTime = System.currentTimeMillis();
         this.timeLimit = timeLimitMs;
         this.stopSearch = false;
@@ -160,7 +192,20 @@ public class SearchEngine {
         
         boolean isPVNode = beta - alpha > 1;
         boolean inCheck = CheckValidator.isKingInCheck(board, board.getSideToMove());
-        
+        // Temporary sanity check
+        if (!inCheck) {
+            // Verify using MoveGenerator's own isSquareAttacked
+            PieceColor us = board.getSideToMove();
+            Piece ourKing = us == PieceColor.WHITE ? Piece.WHITE_KING : Piece.BLACK_KING;
+            List<Integer> kingSquares = board.getPieces(ourKing);
+            if (!kingSquares.isEmpty()) {
+                boolean crossCheck = MoveGenerator.isSquareAttacked(board, kingSquares.get(0), us.opposite());
+                if (crossCheck) {
+                    System.out.println("BUG: CheckValidator says not in check but isSquareAttacked disagrees!");
+                    System.out.println("FEN: " + board.toFEN());
+                }
+            }
+        }
         // Check extension - FIXED: Now correctly checks ply instead of depth
         if (inCheck && ply < MAX_PLY - 1) {
             depth++;
@@ -208,16 +253,10 @@ public class SearchEngine {
         
         // Null move pruning
         if (allowNull && !isPVNode && !inCheck && depth >= NULL_MOVE_MIN_DEPTH && hasNonPawnMaterial(board)) {
-            PieceColor originalSide = board.getSideToMove();
-            int originalEnPassant = board.getEnPassantSquare();
-            board.setSideToMove(originalSide.opposite());
-            board.setEnPassantSquare(-1);
-            
+            board.makeNullMove();
             int nullScore = -alphaBeta(board, depth - 1 - NULL_MOVE_REDUCTION, ply + 1, 
                                       -beta, -beta + 1, false);
-            board.setSideToMove(originalSide);
-            board.setEnPassantSquare(originalEnPassant);
-            
+            board.undoNullMove();
             if (nullScore >= beta) {
                 nullMoveCutoffs++;
                 return beta;
