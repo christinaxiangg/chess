@@ -97,27 +97,6 @@ public class MoveGenerator {
         
         int kingSquare = kingSquares.get(0);
         boolean attacked = isSquareAttacked(board, kingSquare, us.opposite());
-        // Only log when we're about to return TRUE for a king move
-        // (i.e. declaring a king move legal — this is where wrong calls sneak through)
-        if (!attacked && move.getTo() == kingSquare) {
-            Piece ourKingPiece = us == PieceColor.WHITE ? Piece.WHITE_KING : Piece.BLACK_KING;
-            if (board.getPiece(kingSquare) == ourKingPiece) {
-                long enemyPawns = board.getBitboard(
-                        us == PieceColor.WHITE ? Piece.BLACK_PAWN : Piece.WHITE_PAWN);
-                long pawnAttackMask = us == PieceColor.WHITE ?
-                        BLACK_PAWN_ATTACKS[kingSquare] : WHITE_PAWN_ATTACKS[kingSquare];
-                long pawnThreat = enemyPawns & pawnAttackMask;
-                if (pawnThreat != 0) {
-                    System.out.println("BUG: King move to " + Move.squareToString(kingSquare)
-                            + " passed as legal but enemy pawn on "
-                            + Move.squareToString(Long.numberOfTrailingZeros(pawnThreat))
-                            + " attacks it!");
-                    board.undoMakeMove(move);
-                    return false; // force-reject it
-                }
-            }
-        }
-
         boolean isLegal = !attacked;
         board.undoMakeMove(move);
         return isLegal;
@@ -129,8 +108,8 @@ public class MoveGenerator {
     public static boolean isSquareAttacked(BitBoard board, int square, PieceColor attackerColor) {
         // Check pawn attacks
         Piece attackerPawn = attackerColor == PieceColor.WHITE ? Piece.WHITE_PAWN : Piece.BLACK_PAWN;
-        long pawnAttacks = attackerColor == PieceColor.WHITE ? 
-            BLACK_PAWN_ATTACKS[square] : WHITE_PAWN_ATTACKS[square];
+        long pawnAttacks = attackerColor == PieceColor.WHITE ?
+                BLACK_PAWN_ATTACKS[square] : WHITE_PAWN_ATTACKS[square];
         if ((board.getBitboard(attackerPawn) & pawnAttacks) != 0) {
             return true;
         }

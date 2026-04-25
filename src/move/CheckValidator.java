@@ -5,7 +5,7 @@ import piece.Piece;
 import piece.PieceColor;
 import piece.PieceType;
 import java.util.List;
-
+//This class should be removed in the future
 /**
  * Validates whether a king is in check by determining if any enemy piece attacks the king's square.
  * Uses efficient bitboard-based attack generation for all piece types.
@@ -43,7 +43,7 @@ public class CheckValidator {
         }
         
         int kingSquare = kingSquares.get(0);
-        return isSquareAttacked(board, kingSquare, kingColor.opposite());
+        return MoveGenerator.isSquareAttacked(board, kingSquare, kingColor.opposite());
     }
     
     /**

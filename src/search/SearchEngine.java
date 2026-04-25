@@ -63,24 +63,10 @@ public class SearchEngine {
     // Selective depth tracking for deep searches
     private int selectiveDepth;
 
-    private OpeningBook openingBook;
+    private final OpeningBook openingBook = OpeningBook.getInstance();
 
     /**
-     * Loads a Polyglot opening book from the given path.
-     * Call once at startup, before any searches.
-     *
-     * @param path path to a .bin Polyglot book file
-     *             (e.g. "books/Performance.bin" or "books/Titans.bin")
-     */
-    public void loadOpeningBook(String path) {
-        try {
-            openingBook = new OpeningBook(path);
-            System.out.println("info string Opening book loaded: " + path);
-        } catch (java.io.IOException e) {
-            System.out.println("info string Opening book NOT loaded (" + e.getMessage() + ")");
-            openingBook = null;
-        }
-    }
+
 
     /**
      * Creates a new search engine with specified TT size.
