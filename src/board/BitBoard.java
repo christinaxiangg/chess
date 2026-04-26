@@ -708,6 +708,17 @@ public class BitBoard {
         return hashes;
     }
 
+    /**
+     * Gets the last move made on the board.
+     * @return the last move, or null if no moves have been made
+     */
+    public Move getLastMove() {
+        if (stateHistory.isEmpty()) {
+            return null;
+        }
+        return stateHistory.peek().move;
+    }
+
     public BitBoard copy() {
         return new BitBoard(this);
     }

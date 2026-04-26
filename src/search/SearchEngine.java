@@ -290,8 +290,13 @@ public class SearchEngine {
             }
         }
         
-        // Get counter move
+        // Get counter move based on opponent's last move
         Move counterMove = null;
+        Move lastMove = board.getLastMove();
+        if (lastMove != null) {
+            int counterIndex = lastMove.getFrom() * 64 + lastMove.getTo();
+            counterMove = counterMoves[counterIndex];
+        }
         
         MoveOrdering.orderMoves(board, moves, ttMove, killerMoves[ply], counterMove, historyTable);
         
@@ -417,7 +422,7 @@ public class SearchEngine {
 
         // Check time limit - return standPat, not 0
         if (shouldStop()) {
-            return TIMEOUT_CORE;
+            return standPat;
         }
         
         if (standPat >= beta) {
@@ -441,7 +446,7 @@ public class SearchEngine {
         // CRITICAL: Only prune if the side to move is NOT in check.
         boolean inCheck = CheckValidator.isKingInCheck(board, board.getSideToMove());
         if (!inCheck && (standPat + maxGain < alpha)) {
-            return alpha;
+            return standPat;
         }
         List<Move> moves;
         if (inCheck) {
@@ -587,7 +592,7 @@ public class SearchEngine {
         }
         
         // Check time every 1024 nodes
-        if (nodesSearched > 0 && (nodesSearched & 4095) == 0) {
+        if (nodesSearched > 0 && (nodesSearched & 1023) == 0) {
             long elapsed = System.currentTimeMillis() - startTime;
             if (elapsed >= timeLimit) {
                 stopSearch = true;
