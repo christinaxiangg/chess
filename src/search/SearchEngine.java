@@ -409,6 +409,7 @@ public class SearchEngine {
                     if (!move.isCapture()) {
                         updateKillerMoves(move, ply);
                         updateHistoryTable(move, depth);
+                    }
                     if (lastMove != null) {
                         int counterIndex = lastMove.getFrom() * 64 + lastMove.getTo();
                         counterMoves[counterIndex] = move;
