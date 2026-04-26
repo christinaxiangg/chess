@@ -162,6 +162,7 @@ public class SearchEngine {
         }
         int score = alphaBeta(board, depth, 0, alpha, beta, true);
 
+        if (score == TIMEOUT_CORE) return TIMEOUT_CORE;
         // If we fail low or high, research with full window
         if (score <= alpha || score >= beta) {
             score = alphaBeta(board, depth, 0, -Evaluator.CHECKMATE_SCORE, 
@@ -173,6 +174,14 @@ public class SearchEngine {
     
     /**
      * Alpha-Beta search with PVS (Principal Variation Search).
+     *
+     * CORRECTNESS INVARIANTS (must hold on every return path):
+     *  - Returns a score in the current side-to-move's perspective.
+     *  - Returns TIMEOUT_CORE if and only if time ran out; the caller must
+     *    propagate this upward without touching bestMove or alpha/beta.
+     *  - Every non-timeout return stores the result in the TT (except the
+     *    early-exit paths for repetition/fifty-move, mate/stalemate, and
+     *    null-move pruning — those are handled separately).
      */
     private int alphaBeta(BitBoard board, int depth, int ply, int alpha, int beta, boolean allowNull) {
         // Update selective depth tracking
@@ -180,11 +189,7 @@ public class SearchEngine {
             selectiveDepth = ply;
         }
         
-        // Check time limit.
-        // Return alpha, not 0: alpha is the best score confirmed so far at this node
-        // (or the passed-in bound if nothing was searched yet), which is a safe value
-        // for the parent to ignore. Returning 0 is a fake score that corrupts parent
-        // move comparisons and causes the incrementing-by-1 artifact in the logs.
+        // Check time limit first — return sentinel, never store to TT.
         if (shouldStop()) {
             return TIMEOUT_CORE;
         }
@@ -233,7 +238,7 @@ public class SearchEngine {
             ttMove = ttEntry.bestMove; // may be null for UPPER_BOUND entries — that's fine
 
             // Use TT score if depth is sufficient and not a PV node
-            if (ttEntry.depth >= depth && !isPVNode && ply >= 2) {
+            if (ttEntry.depth >= depth && !isPVNode && ply >= 1) {
                 int ttScore = ttEntry.score;
                 if (ttScore > Evaluator.CHECKMATE_SCORE - 1000) {
                     ttScore -= ply;
@@ -243,21 +248,35 @@ public class SearchEngine {
 
                 switch (ttEntry.type) {
                     case EXACT:
+//                        System.out.printf("  [TT] ply=%d depth=%d type=EXACT score=%d (stored depth=%d)%n",
+//                                         ply, depth, ttScore, ttEntry.depth);
                         return ttScore;
                     case LOWER_BOUND:
                         if (ttScore >= beta) {
                             ttCutoffs++;
+//                            System.out.printf("  [TT] ply=%d depth=%d type=LOWER_BOUND score=%d >= beta=%d (stored depth=%d)%n",
+//                                             ply, depth, ttScore, beta, ttEntry.depth);
                             return ttScore;
                         }
-                        //alpha = Math.max(alpha, ttScore);
+                        alpha = Math.max(alpha, ttScore);
+//                        System.out.printf("  [TT] ply=%d depth=%d type=LOWER_BOUND score=%d < beta=%d (stored depth=%d) - NOT USED%n",
+//                                         ply, depth, ttScore, beta, ttEntry.depth);
                         break;
                     case UPPER_BOUND:
                         if (ttScore <= alpha) {
+//                            System.out.printf("  [TT] ply=%d depth=%d type=UPPER_BOUND score=%d <= alpha=%d (stored depth=%d)%n",
+//                                             ply, depth, ttScore, alpha, ttEntry.depth);
                             return ttScore;
                         }
-                        //beta = Math.min(beta, ttScore);
+                        beta = Math.min(beta, ttScore);
+//                        System.out.printf("  [TT] ply=%d depth=%d type=UPPER_BOUND score=%d > alpha=%d (stored depth=%d) - NOT USED%n",
+//                                         ply, depth, ttScore, alpha, ttEntry.depth);
                         break;
                 }
+            } else {
+                // TT entry found but not used (insufficient depth, PV node, or too shallow ply)
+//                System.out.printf("  [TT] ply=%d depth=%d type=%s score=%d storedDepth=%d - NOT USED (isPV=%b, ply>=2=%b)%n",
+//                                 ply, depth, ttEntry.type, ttEntry.score, ttEntry.depth, isPVNode, ply >= 2);
             }
         }
         
@@ -272,6 +291,7 @@ public class SearchEngine {
                                       -beta, -beta + 1, false);
             searchStackSize--;
             board.undoNullMove();
+            if (nullScore == TIMEOUT_CORE) return TIMEOUT_CORE;
             if (nullScore >= beta) {
                 nullMoveCutoffs++;
                 return beta;
@@ -346,7 +366,7 @@ public class SearchEngine {
                 // - Pure PVS (reduction == 0): re-search only if score is strictly inside
                 //   the window (> alpha && < beta), i.e. not already a cutoff
                 // Unified: score >= alpha && (reduction > 0 || score < beta)
-                if (score >= alpha && (reduction > 0 || score < beta)) {
+                if (!stopSearch && score != TIMEOUT_CORE && score > alpha && (reduction > 0 || score < beta)) {
                     score = -alphaBeta(board, depth - 1, ply + 1, -beta, -alpha, true);
                 }
 
@@ -362,19 +382,20 @@ public class SearchEngine {
             }
 
             // Debug: log every root move score so we can see why bad moves are chosen
-            if (ply == 0) {
-                System.out.printf("  [root] move=%-8s score=%-6d alpha=%-6d beta=%-6d%n",
-                    move.toUCI(), score, alpha, beta);
-            }
+//            if (ply == 0) {
+//                System.out.printf("  [root] move=%-8s score=%-6d alpha=%-6d beta=%-6d%n",
+//                    move.toUCI(), score, alpha, beta);
+//            }
             
             if (score > bestScoreFound) {
                 bestScoreFound = score;
                 bestMoveFound = move;
-                
+
                 // Always track the best move at root so we have a valid move even if time expires
                 if (ply == 0) {
                     bestMove = move;
                 }
+            }
                 if (score <= alpha) {
                     entryType = TranspositionTable.EntryType.UPPER_BOUND;
                 } else if ( score < beta) {
@@ -388,12 +409,18 @@ public class SearchEngine {
                     if (!move.isCapture()) {
                         updateKillerMoves(move, ply);
                         updateHistoryTable(move, depth);
+                    if (lastMove != null) {
+                        int counterIndex = lastMove.getFrom() * 64 + lastMove.getTo();
+                        counterMoves[counterIndex] = move;
                     }
                     break; // Beta cutoff
                 }
-            }
+
         }
-            transpositionTable.store(zobristKey, depth, bestScoreFound, ply, entryType, bestMoveFound);
+        int scoreToStore = bestScoreFound;
+        if (scoreToStore > Evaluator.CHECKMATE_SCORE - 1000) scoreToStore += ply;
+        else if (scoreToStore < -Evaluator.CHECKMATE_SCORE + 1000) scoreToStore -= ply;
+        transpositionTable.store(zobristKey, depth, scoreToStore, ply, entryType, bestMoveFound);
 
         return bestScoreFound;
     }
@@ -458,7 +485,8 @@ public class SearchEngine {
         }else{
             moves = generateCaptureMoves(board);
         }
-        int bestScoreFound = -Evaluator.CHECKMATE_SCORE;
+
+        int bestScoreFound = standPat; // Stand-pat is our baseline
         for (Move move : moves) {
             // OPTIMIZED: makeMove/undoMakeMove instead of board.copy()
             board.makeMove(move);
@@ -471,15 +499,15 @@ public class SearchEngine {
 //            }
             
             int score = -quiescence(board, ply + 1, -beta, -alpha);
+
+            board.undoMakeMove(move);
+            searchStackSize--;
             if (score > bestScoreFound) {
                 bestScoreFound = score;
             }
-            // CRITICAL: Undo the move
-            board.undoMakeMove(move);
-            searchStackSize--;
             
             if (score >= beta) {
-                return beta;
+                return bestScoreFound;
             }
             
             if (score > alpha) {

@@ -381,17 +381,21 @@ public class BitBoard {
         
         // Handle castling
         if (move.isCastling()) {
+            // FIX: Use the ROOK's piece key, not the king's (piece.ordinal() is the king).
+            // Using the king's key for the rook squares produced a corrupted hash after
+            // every castling move, causing the TT to return scores for wrong positions.
+            Piece rookPiece = sideToMove == PieceColor.WHITE ? Piece.WHITE_ROOK : Piece.BLACK_ROOK;
             if (move.getFlags() == Move.KING_CASTLE) {
                 int rookFrom = sideToMove == PieceColor.WHITE ? 7 : 63;
                 int rookTo = sideToMove == PieceColor.WHITE ? 5 : 61;
-                currentHash ^= ZobristHash.PIECE_KEYS[piece.ordinal()][rookFrom];
-                currentHash ^= ZobristHash.PIECE_KEYS[piece.ordinal()][rookTo];
+                currentHash ^= ZobristHash.PIECE_KEYS[rookPiece.ordinal()][rookFrom];
+                currentHash ^= ZobristHash.PIECE_KEYS[rookPiece.ordinal()][rookTo];
                 movePiece(rookFrom, rookTo);
             } else { // Queen side
                 int rookFrom = sideToMove == PieceColor.WHITE ? 0 : 56;
                 int rookTo = sideToMove == PieceColor.WHITE ? 3 : 59;
-                currentHash ^= ZobristHash.PIECE_KEYS[piece.ordinal()][rookFrom];
-                currentHash ^= ZobristHash.PIECE_KEYS[piece.ordinal()][rookTo];
+                currentHash ^= ZobristHash.PIECE_KEYS[rookPiece.ordinal()][rookFrom];
+                currentHash ^= ZobristHash.PIECE_KEYS[rookPiece.ordinal()][rookTo];
                 movePiece(rookFrom, rookTo);
             }
         }

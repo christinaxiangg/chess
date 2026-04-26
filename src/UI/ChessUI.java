@@ -543,7 +543,7 @@ public class ChessUI extends JFrame {
             engineExecutor.submit(() -> {
                 try {
                     SearchEngine engine = sideToMove == PieceColor.WHITE ? whiteEngine : blackEngine;
-                    SearchEngine.SearchResult result = engine.search(boardCopy, 14, 10000);
+                    SearchEngine.SearchResult result = engine.search(boardCopy, 14, 3000);
 
                     SwingUtilities.invokeLater(() -> {
                         if (result.bestMove() != null) {
