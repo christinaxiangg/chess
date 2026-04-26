@@ -10,16 +10,16 @@ import piece.PieceColor;
 public class ZobristHash {
     
     // Hash keys for pieces on squares [piece][square]
-    private static final long[][] PIECE_KEYS = new long[12][64];
+    static final long[][] PIECE_KEYS = new long[12][64];
     
     // Hash keys for castling rights [4 bits]
-    private static final long[] CASTLING_KEYS = new long[16];
+    static final long[] CASTLING_KEYS = new long[16];
     
     // Hash keys for en passant file [8 files]
-    private static final long[] EN_PASSANT_KEYS = new long[8];
+    static final long[] EN_PASSANT_KEYS = new long[8];
     
     // Hash key for side to move
-    private static final long SIDE_TO_MOVE_KEY;
+    static final long SIDE_TO_MOVE_KEY;
     
     static {
         // Initialize all zobrist keys with random numbers
@@ -129,5 +129,23 @@ public class ZobristHash {
      */
     public static long toggleSideToMove(long hash) {
         return hash ^ SIDE_TO_MOVE_KEY;
+    }
+
+
+    public static void main(String[] args) {
+        // Example usage
+        BitBoard board = new BitBoard();
+        long hash = computeHash(board);
+        System.out.println("Initial hash: " + hash);
+
+        // Make a move and update hash
+        Piece piece = Piece.WHITE_PAWN;
+        int from = 8; // a2
+        int to = 16;  // a3
+        hash = movePiece(hash, piece, from, to);
+        System.out.println("Hash after move: " + hash);
+        BitBoard boardCopy = board.copy();
+        long hashCopy = computeHash(boardCopy);
+        System.out.println("Hash of copied board: " + hashCopy);
     }
 }

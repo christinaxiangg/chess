@@ -116,6 +116,8 @@ public class BitBoard {
         if (parts.length > 5) {
             board.fullMoveNumber = Integer.parseInt(parts[5]);
         }
+        // Compute initial Zobrist hash from scratch
+        board.currentHash = ZobristHash.computeHash(board);
         
         return board;
     }
@@ -273,8 +275,6 @@ public class BitBoard {
             capturedPiece = getPiece(captureSquare);
         }
 
-        Piece moved = piece;
-
         // Push state immediately with original values
         stateHistory.push(new BoardState(
             castlingRights,
@@ -288,24 +288,39 @@ public class BitBoard {
                 move, toFEN()
         ));
 
+        // ── Incremental Zobrist hash update ──────────────────────────────────────
+        // 1. Remove old en passant contribution
+        if (enPassantSquare != -1) {
+            currentHash ^= ZobristHash.EN_PASSANT_KEYS[enPassantSquare & 7];
+        }
+        // 2. Remove old castling contribution
+        currentHash ^= ZobristHash.CASTLING_KEYS[castlingRights];
         // Handle captures
         if (move.isCapture() && !move.isEnPassant()) {
+            // Remove captured piece from hash before removing from board
+            currentHash ^= ZobristHash.PIECE_KEYS[capturedPiece.ordinal()][to];
             removePiece(to);
         }
         
         // Handle en passant
         if (move.isEnPassant()) {
             int captureSquare = sideToMove == PieceColor.WHITE ? to - 8 : to + 8;
+            currentHash ^= ZobristHash.PIECE_KEYS[capturedPiece.ordinal()][captureSquare];
             removePiece(captureSquare);
         }
         
-        // move.Move the piece
+        // Move the piece: XOR out from-square, XOR in to-square
+        currentHash ^= ZobristHash.PIECE_KEYS[piece.ordinal()][from];
+        currentHash ^= ZobristHash.PIECE_KEYS[piece.ordinal()][to];
         movePiece(from, to);
         
         // Handle promotion
         if (move.isPromotion()) {
             PieceType promoType = move.getPromotionPieceType();
             Piece promoPiece = Piece.getPiece(piece.getColor(), promoType);
+            // Remove pawn hash (already at 'to'), add promoted piece
+            currentHash ^= ZobristHash.PIECE_KEYS[piece.ordinal()][to];
+            currentHash ^= ZobristHash.PIECE_KEYS[promoPiece.ordinal()][to];
             removePiece(to);
             setPiece(to, promoPiece);
         }
@@ -315,10 +330,14 @@ public class BitBoard {
             if (move.getFlags() == Move.KING_CASTLE) {
                 int rookFrom = sideToMove == PieceColor.WHITE ? 7 : 63;
                 int rookTo = sideToMove == PieceColor.WHITE ? 5 : 61;
+                currentHash ^= ZobristHash.PIECE_KEYS[piece.ordinal()][rookFrom];
+                currentHash ^= ZobristHash.PIECE_KEYS[piece.ordinal()][rookTo];
                 movePiece(rookFrom, rookTo);
             } else { // Queen side
                 int rookFrom = sideToMove == PieceColor.WHITE ? 0 : 56;
                 int rookTo = sideToMove == PieceColor.WHITE ? 3 : 59;
+                currentHash ^= ZobristHash.PIECE_KEYS[piece.ordinal()][rookFrom];
+                currentHash ^= ZobristHash.PIECE_KEYS[piece.ordinal()][rookTo];
                 movePiece(rookFrom, rookTo);
             }
         }
@@ -331,7 +350,17 @@ public class BitBoard {
         } else {
             enPassantSquare = -1;
         }
-        
+
+        // 3. Add new castling contribution
+        currentHash ^= ZobristHash.CASTLING_KEYS[castlingRights];
+        // 4. Add new en passant contribution
+        if (enPassantSquare != -1) {
+            currentHash ^= ZobristHash.EN_PASSANT_KEYS[enPassantSquare & 7];
+        }
+        // 5. Flip side to move
+        currentHash ^= ZobristHash.SIDE_TO_MOVE_KEY;
+        // ── End hash update ──────────────────────────────────────────────────────
+
         // Update move counters
         if (piece.getType() == PieceType.PAWN || move.isCapture()) {
             halfMoveClock = 0;
@@ -506,6 +535,10 @@ public class BitBoard {
     
     // Getters and setters for game state
     
+    public long getHash() {
+        return currentHash;
+    }
+
     public PieceColor getSideToMove() {
         return sideToMove;
     }
@@ -613,6 +646,25 @@ public class BitBoard {
     /**
      * Creates a copy of this board.
      */
+    /**
+     * Returns the Zobrist hash of every position that has occurred in this game,
+     * including the current position. Each entry is the hash *before* a move was
+     * made, so the full list is: [start, after_move1, after_move2, ..., current].
+     *
+     * Used by SearchEngine for repetition detection: pass this to search() so the
+     * engine can detect draws against positions that occurred before the search began.
+     * Call this on the ORIGINAL board (not a copy) since copy() does not copy history.
+     */
+    public List<Long> getPositionHashes() {
+        List<Long> hashes = new ArrayList<>();
+        for (BoardState state : stateHistory) {
+            hashes.add(state.hash);
+        }
+        // Also include the current position
+        hashes.add(currentHash);
+        return hashes;
+    }
+
     public BitBoard copy() {
         BitBoard copy = new BitBoard();
         
@@ -629,6 +681,7 @@ public class BitBoard {
         copy.enPassantSquare = this.enPassantSquare;
         copy.halfMoveClock = this.halfMoveClock;
         copy.fullMoveNumber = this.fullMoveNumber;
+        copy.currentHash = this.currentHash;
         
         return copy;
     }
@@ -693,6 +746,11 @@ public class BitBoard {
                 null,
                 toFEN()
         ));
+        // Update hash: remove old EP key, flip side
+        if (enPassantSquare != -1) {
+            currentHash ^= ZobristHash.EN_PASSANT_KEYS[enPassantSquare & 7];
+        }
+        currentHash ^= ZobristHash.SIDE_TO_MOVE_KEY;
         enPassantSquare = -1;
         sideToMove = sideToMove.opposite();
         halfMoveClock++;

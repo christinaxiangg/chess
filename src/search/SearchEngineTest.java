@@ -4,6 +4,8 @@ import board.Evaluator;
 import board.BitBoard;
 import move.Move;
 
+import java.util.List;
+
 /**
  * Test class demonstrating the SearchEngine functionality.
  */
@@ -29,9 +31,9 @@ public class SearchEngineTest {
         board.print();
         
         SearchEngine engine = new SearchEngine(64); // 64 MB transposition table
-        
+        List<Long> history = board.getPositionHashes();
         System.out.println("Searching to depth 5...\n");
-        SearchEngine.SearchResult result = engine.search(board, 5, 10000); // 10 second limit
+        SearchEngine.SearchResult result = engine.search(board, 5, 10000, history); // 10 second limit
         
         System.out.println("\n=== Search Complete ===");
         System.out.println("Best move: " + (result.bestMove() != null ? result.bestMove().toUCI() : "none"));
@@ -59,7 +61,8 @@ public class SearchEngineTest {
         
         SearchEngine engine = new SearchEngine(64);
         System.out.println("Searching to depth 4...\n");
-        SearchEngine.SearchResult result1 = engine.search(board1, 4, 5000);
+        List<Long> history = board1.getPositionHashes();
+        SearchEngine.SearchResult result1 = engine.search(board1, 4, 5000,history);
         
         System.out.println("\nBest move: " + (result1.bestMove() != null ? result1.bestMove().toUCI() : "none"));
         System.out.println("Expected: A move capturing the queen on h4");
@@ -72,7 +75,8 @@ public class SearchEngineTest {
         
         engine.clearTranspositionTable();
         System.out.println("Searching to depth 5...\n");
-        SearchEngine.SearchResult result2 = engine.search(board2, 5, 5000);
+        history = board2.getPositionHashes();
+        SearchEngine.SearchResult result2 = engine.search(board2, 5, 5000,history);
         
         System.out.println("\nBest move: " + (result2.bestMove() != null ? result2.bestMove().toUCI() : "none"));
         System.out.println("Score: " + result2.score() + " cp");
@@ -93,7 +97,8 @@ public class SearchEngineTest {
         
         SearchEngine engine = new SearchEngine(64);
         System.out.println("Searching to depth 3...\n");
-        SearchEngine.SearchResult result1 = engine.search(board1, 3, 5000);
+        List<Long> history = board1.getPositionHashes();
+        SearchEngine.SearchResult result1 = engine.search(board1, 3, 5000,history);
         
         System.out.println("\nBest move: " + (result1.bestMove() != null ? result1.bestMove().toUCI() : "none"));
         System.out.println("Expected: Rf8# (back rank mate)");
@@ -107,7 +112,8 @@ public class SearchEngineTest {
         
         engine.clearTranspositionTable();
         System.out.println("Searching to depth 5...\n");
-        SearchEngine.SearchResult result2 = engine.search(board2, 5, 5000);
+         history = board2.getPositionHashes();
+        SearchEngine.SearchResult result2 = engine.search(board2, 5, 5000,history);
         
         System.out.println("\nBest move: " + (result2.bestMove() != null ? result2.bestMove().toUCI() : "none"));
         System.out.println("Score: " + result2.score() + " cp");
@@ -129,7 +135,8 @@ public class SearchEngineTest {
         
         System.out.println("Searching to depth 6...\n");
         long startTime = System.currentTimeMillis();
-        SearchEngine.SearchResult result = engine.search(board, 6, 15000);
+        List<Long> history = board.getPositionHashes();
+        SearchEngine.SearchResult result = engine.search(board, 6, 15000, history);
         long elapsed = System.currentTimeMillis() - startTime;
         
         System.out.println("\n=== Search Complete ===");
@@ -162,7 +169,7 @@ public class SearchEngineTest {
         for (int depth = 1; depth <= 6; depth++) {
             engine.clearTranspositionTable();
             startTime = System.currentTimeMillis();
-            result = engine.search(board, depth, 5000);
+            result = engine.search(board, depth, 5000,history);
             elapsed = System.currentTimeMillis() - startTime;
             
             totalNodes = result.nodesSearched() + result.qNodesSearched();
@@ -186,8 +193,8 @@ public class SearchEngineTest {
         
         BitBoard newBoard = board.copy();
         newBoard.makeMove(move);
-        
-        SearchEngine.SearchResult result = engine.search(newBoard, 5, 3000);
+        List<Long> history = board.getPositionHashes();
+        SearchEngine.SearchResult result = engine.search(newBoard, 5, 3000, history);
         
         System.out.println("Resulting score: " + (-result.score()) + " cp");
         System.out.println("Best reply: " + (result.bestMove() != null ? result.bestMove().toUCI() : "none"));

@@ -210,8 +210,8 @@ public class UCIInterface {
         final long finalTimeLimit = timeLimit;
         // Search in a separate thread to allow stop command
         Thread searchThread = new Thread(() -> {
-
-            SearchEngine.SearchResult result = searchEngine.search(board, finalDepth, finalTimeLimit);
+            List<Long> history = board.getPositionHashes();
+            SearchEngine.SearchResult result = searchEngine.search(board, finalDepth, finalTimeLimit, history);
             
             if (result.bestMove() != null) {
                 System.out.println("bestmove " + result.bestMove().toUCI());

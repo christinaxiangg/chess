@@ -96,25 +96,27 @@ public class TranspositionTable {
         int index = getIndex(zobristKey);
         TTEntry entry = table[index];
         
-        // Replacement scheme: replace if:
-        // 1. Empty slot
-        // 2. Same position
-        // 3. Entry is from an older search
-        // 4. New entry has greater depth
-        boolean shouldReplace = !entry.isValid() ||
-                               entry.zobristKey == zobristKey ||
-                               entry.age < currentAge ||
-                               depth > entry.depth;
+        // Replacement scheme:
+        // - Always replace empty or stale (old-age) entries
+        // - Otherwise only replace if new depth >= old depth (depth-preferred)
+        boolean shouldReplace = !entry.isValid()
+                || entry.age < currentAge
+                || depth >= entry.depth;
+
         int scoreToStore = score;
         if (score > Evaluator.CHECKMATE_SCORE - 1000) scoreToStore = score + ply;
         else if (score < -Evaluator.CHECKMATE_SCORE + 1000) scoreToStore = score - ply;
 
         if (shouldReplace) {
+            Move moveToStore = bestMove;
+            if (moveToStore == null && entry.zobristKey == zobristKey) {
+                moveToStore = entry.bestMove;
+            }
             entry.zobristKey = zobristKey;
             entry.depth = depth;
             entry.score = scoreToStore;
             entry.type = type;
-            entry.bestMove = bestMove;
+            entry.bestMove = moveToStore;
             entry.age = currentAge;
         }
     }

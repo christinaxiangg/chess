@@ -63,6 +63,17 @@ public class SearchEngine {
     // Selective depth tracking for deep searches
     private int selectiveDepth;
 
+    // Repetition detection:
+    // gameHistoryHashes - positions played in the actual game before this search,
+    //                     supplied by the caller via search(). Each instance only
+    //                     knows its own searches, so the caller must maintain this.
+    // searchStack       - positions visited during the current search tree so we
+    //                     can detect in-tree repetitions without touching the board.
+    // searchStackSize   - how many entries are currently pushed onto the stack.
+    private long[] gameHistoryHashes = new long[0];
+    private final long[] searchStack = new long[MAX_PLY * 2];
+    private int searchStackSize = 0;
+
     private final OpeningBook openingBook = OpeningBook.getInstance();
 
     /**
@@ -82,7 +93,7 @@ public class SearchEngine {
     /**
      * Searches for the best move in the given position.
      */
-    public SearchResult search(BitBoard board, int depthLimit, long timeLimitMs) {
+    public SearchResult search(BitBoard board, int depthLimit, long timeLimitMs, List<Long> gameHistory) {
 
         // ── Opening book probe ──────────────────────────────────────────────
         if (openingBook != null && openingBook.isLoaded() && board.getFullMoveNumber() <= 12) {
@@ -101,6 +112,10 @@ public class SearchEngine {
         this.bestMove = null;
         this.bestScore = 0;
         this.selectiveDepth = 0;
+        this.gameHistoryHashes = gameHistory.stream().mapToLong(Long::longValue).toArray();
+        this.searchStackSize = 0;
+        // Push the root position so in-search repetitions are detected against it
+        searchStack[searchStackSize++] = board.getHash();
         
         resetSearchData();
         resetStatistics();
@@ -127,7 +142,7 @@ public class SearchEngine {
             long elapsed = System.currentTimeMillis() - startTime;
             long nps = (nodesSearched * 1000) / Math.max(elapsed, 1);
             
-            System.out.printf("info depth %d seldepth %d score cp %d nodes %d time %d nps %d pv %s\n",
+            System.out.printf("info depth %d seldepth %d score %d nodes %d time %d nps %d pv %s\n",
                             depth, selectiveDepth, score, nodesSearched, elapsed, nps, 
                             bestMove != null ? bestMove.toUCI() : "none");
         }
@@ -143,6 +158,15 @@ public class SearchEngine {
         int beta = previousScore + ASPIRATION_WINDOW;
         int score = alphaBeta(board, depth, 0, alpha, beta, true);
         
+        // CRITICAL: If time ran out during the aspiration search, do NOT retry with a
+        // full window. The score is 0 (timeout sentinel) which would always satisfy
+        // score <= alpha or score >= beta, triggering a second full search on a
+        // half-explored tree — and in the logs this caused the engine to search from
+        // the opponent's perspective after a side-switch corruption.
+        if (stopSearch) {
+            return score;
+        }
+
         // If we fail low or high, research with full window
         if (score <= alpha || score >= beta) {
             score = alphaBeta(board, depth, 0, -Evaluator.CHECKMATE_SCORE, 
@@ -161,9 +185,13 @@ public class SearchEngine {
             selectiveDepth = ply;
         }
         
-        // Check time limit
+        // Check time limit.
+        // Return alpha, not 0: alpha is the best score confirmed so far at this node
+        // (or the passed-in bound if nothing was searched yet), which is a safe value
+        // for the parent to ignore. Returning 0 is a fake score that corrupts parent
+        // move comparisons and causes the incrementing-by-1 artifact in the logs.
         if (shouldStop()) {
-            return 0;
+            return alpha;
         }
         
         // CRITICAL: Prevent search explosion at very deep plies
@@ -192,10 +220,6 @@ public class SearchEngine {
                 }
             }
         }
-        // Check extension - FIXED: Now correctly checks ply instead of depth
-        if (inCheck) {
-            depth++;
-        }
         
         // Quiescence search at leaf nodes
         if (depth <= 0) {
@@ -204,17 +228,17 @@ public class SearchEngine {
         
         nodesSearched++;
         
-        // Probe transposition table
-        long zobristKey = ZobristHash.computeHash(board);
+        // Use the board's incrementally-maintained hash (O(1) vs O(64) recompute)
+        long zobristKey = board.getHash();
         TranspositionTable.TTEntry ttEntry = transpositionTable.probe(zobristKey);
         Move ttMove = null;
         
         if (ttEntry != null) {
             ttHits++;
-            ttMove = ttEntry.bestMove;
+            ttMove = ttEntry.bestMove; // may be null for UPPER_BOUND entries — that's fine
 
             // Use TT score if depth is sufficient and not a PV node
-            if (ttMove != null && ttEntry.depth >= depth && !isPVNode) {
+            if (ttEntry.depth >= depth && !isPVNode) {
                 int ttScore = ttEntry.score;
                 if (ttScore > Evaluator.CHECKMATE_SCORE - 1000) {
                     ttScore -= ply;
@@ -245,8 +269,13 @@ public class SearchEngine {
         // Null move pruning
         if (allowNull && !isPVNode && !inCheck && depth >= NULL_MOVE_MIN_DEPTH && hasNonPawnMaterial(board)) {
             board.makeNullMove();
+            // Push 0L as a sentinel — null moves are not real positions and must never
+            // match a real hash, but we still need to keep the stack depth consistent
+            // so that repetition detection inside this subtree works correctly.
+            searchStack[searchStackSize++] = 0L;
             int nullScore = -alphaBeta(board, depth - 1 - NULL_MOVE_REDUCTION, ply + 1, 
                                       -beta, -beta + 1, false);
+            searchStackSize--;
             board.undoNullMove();
             if (nullScore >= beta) {
                 nullMoveCutoffs++;
@@ -280,6 +309,7 @@ public class SearchEngine {
         for (int i = 0; i < moves.size(); i++) {
             Move move = moves.get(i);
             board.makeMove(move);
+            searchStack[searchStackSize++] = board.getHash();
             
             // Verify move legality (king not in check after the move) redundant check, but safer than relying on MoveGenerator's legality checks alone
 //            if (CheckValidator.isKingInCheck(board, board.getSideToMove().opposite())) {
@@ -307,21 +337,36 @@ public class SearchEngine {
                     reduction = Math.min(reduction, depth - 1);
                 }
                 
-                // Try null window search first
+                // Step 1: Null window search, possibly at reduced depth (LMR)
                 score = -alphaBeta(board, depth - 1 - reduction, ply + 1, -alpha - 1, -alpha, true);
                 
-                // If it fails high and we reduced, search again at full depth
-                if (score > alpha && reduction > 0) {
+                // Re-search at full depth with full window if the null window search
+                // didn't fail low. Two cases unified:
+                // - LMR applied (reduction > 0): re-search if score >= alpha (tie counts,
+                //   since the reduced search may have missed a better line)
+                // - Pure PVS (reduction == 0): re-search only if score is strictly inside
+                //   the window (> alpha && < beta), i.e. not already a cutoff
+                // Unified: score >= alpha && (reduction > 0 || score < beta)
+                if (score >= alpha && (reduction > 0 || score < beta)) {
                     score = -alphaBeta(board, depth - 1, ply + 1, -beta, -alpha, true);
                 }
-                
-                // If still fails high, do full window search
-                if (score > alpha && score < beta) {
-                    score = -alphaBeta(board, depth - 1, ply + 1, -beta, -alpha, true);
-                }
+
             }
             // CRITICAL: Undo the move before processing results
             board.undoMakeMove(move);
+            searchStackSize--;
+
+            // If time expired inside the recursive call, the score is unreliable (0-sentinel).
+            // Break immediately so we never use a timed-out score to update bestMove or alpha.
+            if (stopSearch) {
+                break;
+            }
+
+            // Debug: log every root move score so we can see why bad moves are chosen
+            if (ply == 0) {
+                System.out.printf("  [root] move=%-8s score=%-6d alpha=%-6d beta=%-6d%n",
+                    move.toUCI(), score, alpha, beta);
+            }
             
             if (score > bestScoreFound) {
                 bestScoreFound = score;
@@ -353,10 +398,28 @@ public class SearchEngine {
             }
         }
         
-        // Store in transposition table
-        transpositionTable.store(zobristKey, depth, bestScoreFound,  ply, entryType, bestMoveFound);
-        
-        return bestScoreFound;
+        // Do NOT store in TT if search was aborted — the result is partial and would
+        // pollute the TT for the next search iteration.
+        // Return alpha: it reflects the best score we actually confirmed at this node
+        // (either from completed moves, or the passed-in bound if no moves finished).
+        // Returning bestScoreFound is wrong because it may still be -CHECKMATE_SCORE
+        // if timeout fired before the very first move completed.
+        if (stopSearch) {
+            return alpha;
+        }
+
+        // Store in transposition table.
+        // For all-nodes (no move raised alpha), bestScoreFound is still -CHECKMATE_SCORE
+        // which is wrong to store. The correct upper bound is alpha (the passed-in value),
+        // since we proved all moves scored <= alpha. Use alpha in that case.
+        int scoreToStore = (entryType == TranspositionTable.EntryType.UPPER_BOUND)
+                ? alpha       // all-node: alpha is the correct upper bound
+                : bestScoreFound; // cut-node or PV-node: bestScoreFound is the real score
+        transpositionTable.store(zobristKey, depth, scoreToStore, ply, entryType, bestMoveFound);
+
+        // Return value must match what we stored for consistency.
+        // For all-nodes we return alpha (the upper bound); for others bestScoreFound.
+        return scoreToStore;
     }
     
     /**
@@ -371,21 +434,23 @@ public class SearchEngine {
             selectiveDepth = ply;
         }
         
-        // Check time limit
-        if (shouldStop()) {
-            return 0;
-        }
-        
         // Prevent quiescence explosion
         if (ply >= MAX_PLY - 1) {
             return Evaluator.evaluate(board);
         }
         
-        // Stand pat score
+        // Stand pat score - computed before the time check so we always have a
+        // real score to return. Returning 0 on timeout is a lie that corrupts
+        // parent node scores; standPat is the correct "stop here" baseline.
         int standPat = Evaluator.evaluate(board);
+
+        // Check time limit - return standPat, not 0
+        if (shouldStop()) {
+            return standPat;
+        }
         
         if (standPat >= beta) {
-            return beta;
+            return standPat;  // fail-high: return exact standPat, not beta (soft bound causes score flattening)
         }
         
         if (standPat > alpha) {
@@ -393,7 +458,7 @@ public class SearchEngine {
         }
         
         // Generate capture moves only
-        List<Move> captureMoves = generateCaptureMoves(board);
+
         
         // Delta pruning: skip if we can't possibly reach alpha
 // 1. Calculate the maximum possible gain from any single move.
@@ -407,8 +472,18 @@ public class SearchEngine {
         if (!inCheck && (standPat + maxGain < alpha)) {
             return alpha;
         }
-        
-        for (Move move : captureMoves) {
+        List<Move> moves;
+        if (inCheck) {
+            moves = MoveGenerator.generateLegalMoves(board);
+            if (moves.isEmpty()) {
+                // Checkmate or stalemate
+                return Evaluator.matedScore(ply);
+            }
+        }else{
+            moves = generateCaptureMoves(board);
+        }
+
+        for (Move move : moves) {
             // OPTIMIZED: makeMove/undoMakeMove instead of board.copy()
             board.makeMove(move);
             
@@ -503,7 +578,23 @@ public class SearchEngine {
      * Simple repetition detection (should be improved with position history).
      */
     private boolean isRepetition(BitBoard board) {
-        // TODO: Implement proper repetition detection with position history
+        long hash = board.getHash();
+
+        // Check game history (positions from actual play before this search).
+        // Supplied by the caller via board.getPositionHashes() on the original board,
+        // since board.copy() does not carry stateHistory.
+        for (long h : gameHistoryHashes) {
+            if (h == hash) return true;
+        }
+
+        // Check in-search stack for repetitions within the current search tree.
+        // The current position was just pushed onto the stack (after makeMove), so
+        // start at searchStackSize-2 to find a prior occurrence. 0L sentinels from
+        // null moves will never match a real hash so they are safely skipped.
+        for (int i = searchStackSize - 2; i >= 0; i--) {
+            if (searchStack[i] == hash) return true;
+        }
+
         return false;
     }
     
