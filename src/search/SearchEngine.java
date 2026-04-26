@@ -462,6 +462,7 @@ public class SearchEngine {
         for (Move move : moves) {
             // OPTIMIZED: makeMove/undoMakeMove instead of board.copy()
             board.makeMove(move);
+            searchStack[searchStackSize++] = board.getHash();
             
             // Prune if move leaves king in check (illegal) - seems redundant, comment out for now
 //            if (CheckValidator.isKingInCheck(board, board.getSideToMove().opposite())) {
@@ -475,6 +476,7 @@ public class SearchEngine {
             }
             // CRITICAL: Undo the move
             board.undoMakeMove(move);
+            searchStackSize--;
             
             if (score >= beta) {
                 return beta;
