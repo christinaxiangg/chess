@@ -76,8 +76,7 @@ public class SearchEngine {
 
     private final OpeningBook openingBook = OpeningBook.getInstance();
 
-    /**
-
+    private static final int TIMEOUT_CORE = Integer.MIN_VALUE + 1;
 
     /**
      * Creates a new search engine with specified TT size.
@@ -93,7 +92,7 @@ public class SearchEngine {
     /**
      * Searches for the best move in the given position.
      */
-    public SearchResult search(BitBoard board, int depthLimit, long timeLimitMs, List<Long> gameHistory) {
+    public SearchResult search(BitBoard board, int depthLimit, long timeLimitMs) {
 
         // ── Opening book probe ──────────────────────────────────────────────
         if (openingBook != null && openingBook.isLoaded() && board.getFullMoveNumber() <= 12) {
@@ -112,7 +111,7 @@ public class SearchEngine {
         this.bestMove = null;
         this.bestScore = 0;
         this.selectiveDepth = 0;
-        this.gameHistoryHashes = gameHistory.stream().mapToLong(Long::longValue).toArray();
+        this.gameHistoryHashes = board.getGameHistoryHashes();
         this.searchStackSize = 0;
         // Push the root position so in-search repetitions are detected against it
         searchStack[searchStackSize++] = board.getHash();
@@ -132,11 +131,13 @@ public class SearchEngine {
                                 Evaluator.CHECKMATE_SCORE, true);
             }
             
-            if (stopSearch) {
+            if (stopSearch || score == TIMEOUT_CORE) {
                 break;
             }
-            
-            bestScore = score;
+
+            if (score > bestScore) {
+                bestScore = score;
+            }
             
             // Print search info
             long elapsed = System.currentTimeMillis() - startTime;
@@ -156,16 +157,10 @@ public class SearchEngine {
     private int aspirationSearch(BitBoard board, int depth, int previousScore) {
         int alpha = previousScore - ASPIRATION_WINDOW;
         int beta = previousScore + ASPIRATION_WINDOW;
-        int score = alphaBeta(board, depth, 0, alpha, beta, true);
-        
-        // CRITICAL: If time ran out during the aspiration search, do NOT retry with a
-        // full window. The score is 0 (timeout sentinel) which would always satisfy
-        // score <= alpha or score >= beta, triggering a second full search on a
-        // half-explored tree — and in the logs this caused the engine to search from
-        // the opponent's perspective after a side-switch corruption.
         if (stopSearch) {
-            return score;
+            return TIMEOUT_CORE;
         }
+        int score = alphaBeta(board, depth, 0, alpha, beta, true);
 
         // If we fail low or high, research with full window
         if (score <= alpha || score >= beta) {
@@ -191,7 +186,7 @@ public class SearchEngine {
         // for the parent to ignore. Returning 0 is a fake score that corrupts parent
         // move comparisons and causes the incrementing-by-1 artifact in the logs.
         if (shouldStop()) {
-            return alpha;
+            return TIMEOUT_CORE;
         }
         
         // CRITICAL: Prevent search explosion at very deep plies
@@ -238,7 +233,7 @@ public class SearchEngine {
             ttMove = ttEntry.bestMove; // may be null for UPPER_BOUND entries — that's fine
 
             // Use TT score if depth is sufficient and not a PV node
-            if (ttEntry.depth >= depth && !isPVNode) {
+            if (ttEntry.depth >= depth && !isPVNode && ply >= 2) {
                 int ttScore = ttEntry.score;
                 if (ttScore > Evaluator.CHECKMATE_SCORE - 1000) {
                     ttScore -= ply;
@@ -254,13 +249,13 @@ public class SearchEngine {
                             ttCutoffs++;
                             return ttScore;
                         }
-                        alpha = Math.max(alpha, ttScore);
+                        //alpha = Math.max(alpha, ttScore);
                         break;
                     case UPPER_BOUND:
                         if (ttScore <= alpha) {
                             return ttScore;
                         }
-                        beta = Math.min(beta, ttScore);
+                        //beta = Math.min(beta, ttScore);
                         break;
                 }
             }
@@ -304,8 +299,7 @@ public class SearchEngine {
         Move bestMoveFound = null;
         int bestScoreFound = -Evaluator.CHECKMATE_SCORE;
         TranspositionTable.EntryType entryType = TranspositionTable.EntryType.UPPER_BOUND;
-        boolean raisedAlpha = false;
-        
+
         for (int i = 0; i < moves.size(); i++) {
             Move move = moves.get(i);
             board.makeMove(move);
@@ -358,8 +352,8 @@ public class SearchEngine {
 
             // If time expired inside the recursive call, the score is unreliable (0-sentinel).
             // Break immediately so we never use a timed-out score to update bestMove or alpha.
-            if (stopSearch) {
-                break;
+            if (score == TIMEOUT_CORE ||stopSearch) {
+                return TIMEOUT_CORE;
             }
 
             // Debug: log every root move score so we can see why bad moves are chosen
@@ -376,14 +370,12 @@ public class SearchEngine {
                 if (ply == 0) {
                     bestMove = move;
                 }
-                
-                if (score > alpha) {
+                if (score <= alpha) {
+                    entryType = TranspositionTable.EntryType.UPPER_BOUND;
+                } else if ( score < beta) {
                     alpha = score;
-                    raisedAlpha = true;
                     entryType = TranspositionTable.EntryType.EXACT;
-                }
-                
-                if (alpha >= beta) {
+                }else {
                     betaCutoffs++;
                     entryType = TranspositionTable.EntryType.LOWER_BOUND;
                     
@@ -392,34 +384,13 @@ public class SearchEngine {
                         updateKillerMoves(move, ply);
                         updateHistoryTable(move, depth);
                     }
-                    
                     break; // Beta cutoff
                 }
             }
         }
-        
-        // Do NOT store in TT if search was aborted — the result is partial and would
-        // pollute the TT for the next search iteration.
-        // Return alpha: it reflects the best score we actually confirmed at this node
-        // (either from completed moves, or the passed-in bound if no moves finished).
-        // Returning bestScoreFound is wrong because it may still be -CHECKMATE_SCORE
-        // if timeout fired before the very first move completed.
-        if (stopSearch) {
-            return alpha;
-        }
+            transpositionTable.store(zobristKey, depth, bestScoreFound, ply, entryType, bestMoveFound);
 
-        // Store in transposition table.
-        // For all-nodes (no move raised alpha), bestScoreFound is still -CHECKMATE_SCORE
-        // which is wrong to store. The correct upper bound is alpha (the passed-in value),
-        // since we proved all moves scored <= alpha. Use alpha in that case.
-        int scoreToStore = (entryType == TranspositionTable.EntryType.UPPER_BOUND)
-                ? alpha       // all-node: alpha is the correct upper bound
-                : bestScoreFound; // cut-node or PV-node: bestScoreFound is the real score
-        transpositionTable.store(zobristKey, depth, scoreToStore, ply, entryType, bestMoveFound);
-
-        // Return value must match what we stored for consistency.
-        // For all-nodes we return alpha (the upper bound); for others bestScoreFound.
-        return scoreToStore;
+        return bestScoreFound;
     }
     
     /**
@@ -446,7 +417,7 @@ public class SearchEngine {
 
         // Check time limit - return standPat, not 0
         if (shouldStop()) {
-            return standPat;
+            return TIMEOUT_CORE;
         }
         
         if (standPat >= beta) {
@@ -482,7 +453,7 @@ public class SearchEngine {
         }else{
             moves = generateCaptureMoves(board);
         }
-
+        int bestScoreFound = -Evaluator.CHECKMATE_SCORE;
         for (Move move : moves) {
             // OPTIMIZED: makeMove/undoMakeMove instead of board.copy()
             board.makeMove(move);
@@ -494,7 +465,9 @@ public class SearchEngine {
 //            }
             
             int score = -quiescence(board, ply + 1, -beta, -alpha);
-            
+            if (score > bestScoreFound) {
+                bestScoreFound = score;
+            }
             // CRITICAL: Undo the move
             board.undoMakeMove(move);
             
@@ -507,7 +480,7 @@ public class SearchEngine {
             }
         }
         
-        return alpha;
+        return bestScoreFound;
     }
     
     /**
@@ -579,20 +552,27 @@ public class SearchEngine {
      */
     private boolean isRepetition(BitBoard board) {
         long hash = board.getHash();
+        int count = 0;
+        int remaining = board.getHalfMoveClock();
 
-        // Check game history (positions from actual play before this search).
-        // Supplied by the caller via board.getPositionHashes() on the original board,
-        // since board.copy() does not carry stateHistory.
-        for (long h : gameHistoryHashes) {
-            if (h == hash) return true;
-        }
+        // Build one unified timeline: gameHistoryHashes followed by searchStack
+        // Index 0..gameHistoryHashes.length-1 = real game history (oldest to newest)
+        // Index gameHistoryHashes.length..combined.length-1 = current search path
+        int gameLen = gameHistoryHashes.length;
+        int stackLen = searchStackSize; // includes current position at top
+        int totalLen = gameLen + stackLen;
 
-        // Check in-search stack for repetitions within the current search tree.
-        // The current position was just pushed onto the stack (after makeMove), so
-        // start at searchStackSize-2 to find a prior occurrence. 0L sentinels from
-        // null moves will never match a real hash so they are safely skipped.
-        for (int i = searchStackSize - 2; i >= 0; i--) {
-            if (searchStack[i] == hash) return true;
+        // Scan backwards from the second-to-last entry (skip current position at top)
+        // stepping by 2 to stay on same side-to-move, bounded by halfMoveClock
+        for (int i = totalLen - 2; i >= 0 && remaining > 0; i -= 2) {
+            long h = (i >= gameLen)
+                    ? searchStack[i - gameLen]
+                    : gameHistoryHashes[i];
+            if (h == hash) {
+                count++;
+                if (count >= 2) return true;
+            }
+            remaining -= 2;
         }
 
         return false;
@@ -607,7 +587,7 @@ public class SearchEngine {
         }
         
         // Check time every 1024 nodes
-        if ((nodesSearched & 1023) == 0) {
+        if (nodesSearched > 0 && (nodesSearched & 4095) == 0) {
             long elapsed = System.currentTimeMillis() - startTime;
             if (elapsed >= timeLimit) {
                 stopSearch = true;

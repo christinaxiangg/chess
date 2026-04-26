@@ -12,7 +12,7 @@ import move.Move;
  */
 public class BitBoard {
     // Bitboards for each piece type and color (12 total)
-    private long[] pieceBitboards;
+    private final long[] pieceBitboards;
     
     // Occupancy bitboards
     private long whitePieces;
@@ -20,13 +20,13 @@ public class BitBoard {
     private long allPieces;
     
     // piece.Piece list for fast iteration (tracks all pieces on board)
-    private PieceList[] pieceLists;
+    private final PieceList[] pieceLists;
     
     // Stack to store board states for undo operations
-    private java.util.Stack<BoardState> stateHistory;
+    private final java.util.Stack<BoardState> stateHistory;
     
     // Mailbox representation for O(1) piece lookup by square
-    private Piece[] mailbox;
+    private final Piece[] mailbox;
     
     // Game state
     private PieceColor sideToMove;
@@ -64,6 +64,60 @@ public class BitBoard {
         fullMoveNumber = 1;
         currentHash = 0L;
     }
+    public BitBoard(BitBoard from) {
+        pieceBitboards = new long[12];
+        mailbox = new Piece[64];
+        pieceLists = new PieceList[12];
+        stateHistory = new java.util.Stack<>();
+
+        for (int i = 0; i < 12; i++) {
+            pieceLists[i] = new PieceList();
+        }
+        System.arraycopy(from.mailbox, 0, mailbox, 0, 64);
+        // Copy piece positions
+        for (int i = 0; i < 64; i++) {
+            if (mailbox[i] != null) {
+                Piece piece = mailbox[i];
+                int pieceIndex = piece.ordinal();
+                long mask = 1L << i;
+                pieceBitboards[pieceIndex] |= mask;
+                pieceLists[pieceIndex].add(i);
+                if (piece.isWhite()) {
+                    whitePieces |= mask;
+                } else {
+                    blackPieces |= mask;
+                }
+                allPieces |= mask;
+            }
+        }
+
+        // Deep copy stateHistory (bottom-to-top order preserved).
+        // BoardState fields are all primitives, enums, or immutable objects (Piece, Move),
+        // so re-constructing each entry is a true deep copy.
+        for (BoardState s : from.stateHistory) {
+            stateHistory.push(new BoardState(
+                    s.castlingRights,
+                    s.enPassantSquare,
+                    s.halfMoveClock,
+                    s.fullMoveNumber,
+                    s.sideToMove,
+                    s.capturedPiece,
+                    s.movedPiece,
+                    s.hash,
+                    s.move,
+                    s.fenBefore
+            ));
+        }
+
+        // Copy scalar game state
+        sideToMove      = from.sideToMove;
+        castlingRights  = from.castlingRights;
+        enPassantSquare = from.enPassantSquare;
+        halfMoveClock   = from.halfMoveClock;
+        fullMoveNumber  = from.fullMoveNumber;
+        currentHash     = from.currentHash;
+    }
+
     
     /**
      * Creates a board from FEN notation.
@@ -643,47 +697,19 @@ public class BitBoard {
         return fen.toString();
     }
     
-    /**
-     * Creates a copy of this board.
-     */
-    /**
-     * Returns the Zobrist hash of every position that has occurred in this game,
-     * including the current position. Each entry is the hash *before* a move was
-     * made, so the full list is: [start, after_move1, after_move2, ..., current].
-     *
-     * Used by SearchEngine for repetition detection: pass this to search() so the
-     * engine can detect draws against positions that occurred before the search began.
-     * Call this on the ORIGINAL board (not a copy) since copy() does not copy history.
-     */
-    public List<Long> getPositionHashes() {
-        List<Long> hashes = new ArrayList<>();
+
+
+    public long[] getGameHistoryHashes() {
+        long[] hashes = new long[stateHistory.size()];
+        int i = 0;
         for (BoardState state : stateHistory) {
-            hashes.add(state.hash);
+            hashes[i++] = state.hash;
         }
-        // Also include the current position
-        hashes.add(currentHash);
         return hashes;
     }
 
     public BitBoard copy() {
-        BitBoard copy = new BitBoard();
-        
-        // Copy piece positions
-        for (int i = 0; i < 64; i++) {
-            if (mailbox[i] != null) {
-                copy.setPiece(i, mailbox[i]);
-            }
-        }
-        
-        // Copy game state
-        copy.sideToMove = this.sideToMove;
-        copy.castlingRights = this.castlingRights;
-        copy.enPassantSquare = this.enPassantSquare;
-        copy.halfMoveClock = this.halfMoveClock;
-        copy.fullMoveNumber = this.fullMoveNumber;
-        copy.currentHash = this.currentHash;
-        
-        return copy;
+        return new BitBoard(this);
     }
     
     /**
