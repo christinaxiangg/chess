@@ -339,7 +339,8 @@ public class BitBoard {
             capturedPiece,
             piece,  // The original piece before promotion
             currentHash,
-                move, toFEN()
+                move,
+                toFEN()
         ));
 
         // ── Incremental Zobrist hash update ──────────────────────────────────────

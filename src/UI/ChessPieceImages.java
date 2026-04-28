@@ -17,8 +17,8 @@ public class ChessPieceImages {
     private static final int PIECE_SIZE = 80;
 
     // Piece image cache
-    private static Image[] whitePieces = new Image[6];
-    private static Image[] blackPieces = new Image[6];
+    private static final Image[] whitePieces = new Image[6];
+    private static final Image[] blackPieces = new Image[6];
     private static boolean loaded = false;
 
     // Piece type to file name mapping
@@ -103,14 +103,14 @@ public class ChessPieceImages {
     }
 
     private static String getPieceSymbol(Piece piece) {
-        switch (piece.getType()) {
-            case KING: return piece.isWhite() ? "♔" : "♚";
-            case QUEEN: return piece.isWhite() ? "♕" : "♛";
-            case ROOK: return piece.isWhite() ? "♖" : "♜";
-            case BISHOP: return piece.isWhite() ? "♗" : "♝";
-            case KNIGHT: return piece.isWhite() ? "♘" : "♞";
-            case PAWN: return piece.isWhite() ? "♙" : "♟";
-            default: return "";
-        }
+        return switch (piece.getType()) {
+            case KING -> piece.isWhite() ? "♔" : "♚";
+            case QUEEN -> piece.isWhite() ? "♕" : "♛";
+            case ROOK -> piece.isWhite() ? "♖" : "♜";
+            case BISHOP -> piece.isWhite() ? "♗" : "♝";
+            case KNIGHT -> piece.isWhite() ? "♘" : "♞";
+            case PAWN -> piece.isWhite() ? "♙" : "♟";
+            default -> "";
+        };
     }
 }

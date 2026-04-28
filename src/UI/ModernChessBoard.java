@@ -269,8 +269,8 @@ public class ModernChessBoard extends JPanel {
                 // Check if this square should be highlighted
                 if (square.equals(selectedSquare)) {
                     squareColor = isLight ? colorScheme.selectedLight : colorScheme.selectedDark;
-                } else if ((lastMoveFrom != null && square.equals(lastMoveFrom)) ||
-                          (lastMoveTo != null && square.equals(lastMoveTo))) {
+                } else if ((square.equals(lastMoveFrom)) ||
+                          (square.equals(lastMoveTo))) {
                     squareColor = isLight ? colorScheme.highlightLight : colorScheme.highlightDark;
                 } else {
                     squareColor = isLight ? colorScheme.lightSquare : colorScheme.darkSquare;

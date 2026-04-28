@@ -20,7 +20,7 @@ public class PieceIcons {
         "black-pawn", "black-knight", "black-bishop", "black-rook", "black-queen", "black-king"
     };
 
-    private static ImageIcon[] pieceIcons = new ImageIcon[12];
+    private static final ImageIcon[] pieceIcons = new ImageIcon[12];
     private static boolean loaded = false;
 
     public static void loadIcons() {

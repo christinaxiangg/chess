@@ -43,19 +43,16 @@ public class ChessUI extends JFrame {
     private BitBoard board;
     private Move lastMove;
     private int selectedSquare = -1;
-    private List<Move> legalMovesForSelected = new ArrayList<>();
+    private final List<Move> legalMovesForSelected = new ArrayList<>();
     private boolean boardFlipped = false;
-    private List<Move> moveHistory;
+    private final List<Move> moveHistory;
     private JList<String> moveList;
     private DefaultListModel<String> moveListModel;
     private JLabel statusLabel;
-    private JButton flipButton;
-    private JButton newGameButton;
-    private JButton undoButton;
     private JComboBox<String> playerModeCombo;
     private SearchEngine whiteEngine;
-    private SearchEngine blackEngine;
-    private ExecutorService engineExecutor;
+    private SearchEngine2 blackEngine;
+    private final ExecutorService engineExecutor;
     private boolean engineThinking = false;
     private boolean darkMode = false;
     private JButton darkModeButton;
@@ -76,7 +73,7 @@ public class ChessUI extends JFrame {
 
         // Initialize engines
         whiteEngine = new SearchEngine(128);
-        blackEngine = new SearchEngine(128);
+        blackEngine = new SearchEngine2(128);
         engineExecutor = Executors.newSingleThreadExecutor();
 
         // Create UI components
@@ -155,13 +152,13 @@ public class ChessUI extends JFrame {
         playerModeCombo.addActionListener(e -> onPlayerModeChanged());
 
         // Control buttons
-        newGameButton = new JButton("New Game");
+        JButton newGameButton = new JButton("New Game");
         newGameButton.addActionListener(e -> startNewGame());
 
-        flipButton = new JButton("Flip Board");
+        JButton flipButton = new JButton("Flip Board");
         flipButton.addActionListener(e -> flipBoard());
 
-        undoButton = new JButton("Undo");
+        JButton undoButton = new JButton("Undo");
         undoButton.addActionListener(e -> undoLastMove());
 
         darkModeButton = new JButton("Dark Mode");
@@ -542,8 +539,8 @@ public class ChessUI extends JFrame {
 
             engineExecutor.submit(() -> {
                 try {
-                    SearchEngine engine = sideToMove == PieceColor.WHITE ? whiteEngine : blackEngine;
-                    SearchEngine.SearchResult result = engine.search(boardCopy, 14, 3000);
+                    Search engine = sideToMove == PieceColor.WHITE ? whiteEngine : blackEngine;
+                    SearchResult result = engine.search(boardCopy, 14, 3000);
 
                     SwingUtilities.invokeLater(() -> {
                         if (result.bestMove() != null) {
@@ -638,7 +635,7 @@ public class ChessUI extends JFrame {
 
         // Reset engines
         whiteEngine = new SearchEngine(128);
-        blackEngine = new SearchEngine(128);
+        blackEngine = new SearchEngine2(128);
 
         // Disable playback buttons
         backButton.setEnabled(false);

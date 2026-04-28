@@ -2,7 +2,7 @@ package search;
 import java.util.List;
 import java.util.ArrayList;
 import board.BitBoard;
-import board.Evaluator;
+import board.Evaluator2;
 import board.ZobristHash;
 import move.*;
 import piece.Piece;
@@ -21,7 +21,7 @@ import piece.PieceType;
  * - Iterative Deepening
  * - Quiescence Search
  */
-public class SearchEngine implements Search {
+public class SearchEngine2 implements Search {
     
     // Search limits
     private static final int MAX_PLY = 128;
@@ -81,7 +81,7 @@ public class SearchEngine implements Search {
     /**
      * Creates a new search engine with specified TT size.
      */
-    public SearchEngine(int ttSizeInMB) {
+    public SearchEngine2(int ttSizeInMB) {
         this.transpositionTable = new TranspositionTable(ttSizeInMB);
         this.historyTable = new int[64][64];
         this.killerMoves = new Move[MAX_PLY][2];
@@ -127,8 +127,8 @@ public class SearchEngine implements Search {
             if (depth > 1) {
                 score = aspirationSearch(board, depth, score);
             } else {
-                score = alphaBeta(board, depth, 0, -Evaluator.CHECKMATE_SCORE,
-                                Evaluator.CHECKMATE_SCORE, true);
+                score = alphaBeta(board, depth, 0, -Evaluator2.CHECKMATE_SCORE,
+                                Evaluator2.CHECKMATE_SCORE, true);
             }
             
             if (stopSearch || score == TIMEOUT_CORE) {
@@ -165,8 +165,8 @@ public class SearchEngine implements Search {
         if (score == TIMEOUT_CORE) return TIMEOUT_CORE;
         // If we fail low or high, research with full window
         if (score <= alpha || score >= beta) {
-            score = alphaBeta(board, depth, 0, -Evaluator.CHECKMATE_SCORE, 
-                            Evaluator.CHECKMATE_SCORE, true);
+            score = alphaBeta(board, depth, 0, -Evaluator2.CHECKMATE_SCORE, 
+                            Evaluator2.CHECKMATE_SCORE, true);
         }
         
         return score;
@@ -196,12 +196,12 @@ public class SearchEngine implements Search {
         
         // CRITICAL: Prevent search explosion at very deep plies
         if (ply >= MAX_PLY - 1) {
-            return Evaluator.evaluate(board);
+            return Evaluator2.evaluate(board);
         }
         
         // Check for draw by repetition or fifty-move rule
         if (ply > 0 && (board.getHalfMoveClock() >= 100 || isRepetition(board))) {
-            return Evaluator.STALEMATE_SCORE;
+            return Evaluator2.STALEMATE_SCORE;
         }
         
         boolean isPVNode = beta - alpha > 1;
@@ -240,9 +240,9 @@ public class SearchEngine implements Search {
             // Use TT score if depth is sufficient and not a PV node
             if (ttEntry.depth >= depth && !isPVNode && ply >= 1) {
                 int ttScore = ttEntry.score;
-                if (ttScore > Evaluator.CHECKMATE_SCORE - 1000) {
+                if (ttScore > Evaluator2.CHECKMATE_SCORE - 1000) {
                     ttScore -= ply;
-                } else if (ttScore < -Evaluator.CHECKMATE_SCORE + 1000){
+                } else if (ttScore < -Evaluator2.CHECKMATE_SCORE + 1000){
                     ttScore += ply;
                 }
 
@@ -304,9 +304,9 @@ public class SearchEngine implements Search {
         if (moves.isEmpty()) {
             // Checkmate or stalemate
             if (inCheck) {
-                return Evaluator.matedScore(ply);
+                return Evaluator2.matedScore(ply);
             } else {
-                return Evaluator.STALEMATE_SCORE;
+                return Evaluator2.STALEMATE_SCORE;
             }
         }
         
@@ -322,7 +322,7 @@ public class SearchEngine implements Search {
         
         // Search moves
         Move bestMoveFound = null;
-        int bestScoreFound = -Evaluator.CHECKMATE_SCORE;
+        int bestScoreFound = -Evaluator2.CHECKMATE_SCORE;
         TranspositionTable.EntryType entryType = TranspositionTable.EntryType.UPPER_BOUND;
 
         for (int i = 0; i < moves.size(); i++) {
@@ -438,13 +438,13 @@ public class SearchEngine implements Search {
         
         // Prevent quiescence explosion
         if (ply >= MAX_PLY - 1) {
-            return Evaluator.evaluate(board);
+            return Evaluator2.evaluate(board);
         }
         
         // Stand pat score - computed before the time check so we always have a
         // real score to return. Returning 0 on timeout is a lie that corrupts
         // parent node scores; standPat is the correct "stop here" baseline.
-        int standPat = Evaluator.evaluate(board);
+        int standPat = Evaluator2.evaluate(board);
 
         // Check time limit - return standPat, not 0
         if (shouldStop()) {
@@ -479,7 +479,7 @@ public class SearchEngine implements Search {
             moves = MoveGenerator.generateLegalMoves(board);
             if (moves.isEmpty()) {
                 // Checkmate or stalemate
-                return Evaluator.matedScore(ply);
+                return Evaluator2.matedScore(ply);
             }
         }else{
             moves = generateCaptureMoves(board);
@@ -506,8 +506,7 @@ public class SearchEngine implements Search {
             }
             
             if (score >= beta) {
-                //need check with AI here!!!
-                return bestScoreFound;// return beta; // fail-high: return exact score, not beta (soft bound causes score flattening)
+                return bestScoreFound;
             }
             
             if (score > alpha) {
@@ -689,6 +688,7 @@ public class SearchEngine implements Search {
     public void clearTranspositionTable() {
         transpositionTable.clear();
     }
+
 
 
     /**

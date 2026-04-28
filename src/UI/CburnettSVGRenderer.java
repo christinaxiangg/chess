@@ -892,16 +892,15 @@ public class CburnettSVGRenderer {
      */
     private static String getPieceCode(Piece piece) {
         String color = piece.isWhite() ? "w" : "b";
-        String type;
-        switch (piece.getType()) {
-            case PAWN: type = "P"; break;
-            case KNIGHT: type = "N"; break;
-            case BISHOP: type = "B"; break;
-            case ROOK: type = "R"; break;
-            case QUEEN: type = "Q"; break;
-            case KING: type = "K"; break;
-            default: type = "P";
-        }
+        String type = switch (piece.getType()) {
+            case PAWN -> "P";
+            case KNIGHT -> "N";
+            case BISHOP -> "B";
+            case ROOK -> "R";
+            case QUEEN -> "Q";
+            case KING -> "K";
+            default -> "P";
+        };
         return color + type;
     }
 
@@ -930,15 +929,15 @@ public class CburnettSVGRenderer {
      * Get Unicode symbol for a piece
      */
     private static String getPieceSymbol(Piece piece) {
-        switch (piece.getType()) {
-            case KING: return piece.isWhite() ? "♔" : "♚";
-            case QUEEN: return piece.isWhite() ? "♕" : "♛";
-            case ROOK: return piece.isWhite() ? "♖" : "♜";
-            case BISHOP: return piece.isWhite() ? "♗" : "♝";
-            case KNIGHT: return piece.isWhite() ? "♘" : "♞";
-            case PAWN: return piece.isWhite() ? "♙" : "♟";
-            default: return "";
-        }
+        return switch (piece.getType()) {
+            case KING -> piece.isWhite() ? "♔" : "♚";
+            case QUEEN -> piece.isWhite() ? "♕" : "♛";
+            case ROOK -> piece.isWhite() ? "♖" : "♜";
+            case BISHOP -> piece.isWhite() ? "♗" : "♝";
+            case KNIGHT -> piece.isWhite() ? "♘" : "♞";
+            case PAWN -> piece.isWhite() ? "♙" : "♟";
+            default -> "";
+        };
     }
 
     /**

@@ -7,7 +7,7 @@ import piece.PieceColor;
  * Position evaluator for chess.
  * Evaluates positions based on material, piece-square tables, and positional factors.
  */
-public class Evaluator {
+public class Evaluator2 {
     
     // Checkmate and stalemate scores
     public static final int CHECKMATE_SCORE = 30000;
@@ -176,7 +176,7 @@ public class Evaluator {
     private static int getPieceSquareValue(Piece piece, int square, boolean isEndGame) {
         // For white pieces, flip the square vertically because it from white visual board perspective,
         // the array is actually indexed from black's perspective (0 is a1, 63 is h8)
-        int tableSquare = piece.isWhite() ? square : (63 - square);
+        int tableSquare = piece.isWhite() ? (square ^ 56) : square;
 
         return switch (piece.getType()) {
             case PAWN -> PAWN_TABLE[tableSquare];

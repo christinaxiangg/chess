@@ -33,7 +33,7 @@ public class SearchEngineTest {
         SearchEngine engine = new SearchEngine(64); // 64 MB transposition table
 
         System.out.println("Searching to depth 5...\n");
-        SearchEngine.SearchResult result = engine.search(board, 5, 10000); // 10 second limit
+        SearchResult result = engine.search(board, 5, 10000); // 10 second limit
         
         System.out.println("\n=== Search Complete ===");
         System.out.println("Best move: " + (result.bestMove() != null ? result.bestMove().toUCI() : "none"));
@@ -61,7 +61,7 @@ public class SearchEngineTest {
         
         SearchEngine engine = new SearchEngine(64);
         System.out.println("Searching to depth 4...\n");
-        SearchEngine.SearchResult result1 = engine.search(board1, 4, 5000);
+        SearchResult result1 = engine.search(board1, 4, 5000);
         
         System.out.println("\nBest move: " + (result1.bestMove() != null ? result1.bestMove().toUCI() : "none"));
         System.out.println("Expected: A move capturing the queen on h4");
@@ -74,7 +74,7 @@ public class SearchEngineTest {
         
         engine.clearTranspositionTable();
         System.out.println("Searching to depth 5...\n");
-        SearchEngine.SearchResult result2 = engine.search(board2, 5, 5000);
+        SearchResult result2 = engine.search(board2, 5, 5000);
         
         System.out.println("\nBest move: " + (result2.bestMove() != null ? result2.bestMove().toUCI() : "none"));
         System.out.println("Score: " + result2.score() + " cp");
@@ -95,7 +95,7 @@ public class SearchEngineTest {
         
         SearchEngine engine = new SearchEngine(64);
         System.out.println("Searching to depth 3...\n");
-        SearchEngine.SearchResult result1 = engine.search(board1, 3, 5000);
+        SearchResult result1 = engine.search(board1, 3, 5000);
         
         System.out.println("\nBest move: " + (result1.bestMove() != null ? result1.bestMove().toUCI() : "none"));
         System.out.println("Expected: Rf8# (back rank mate)");
@@ -109,7 +109,7 @@ public class SearchEngineTest {
         
         engine.clearTranspositionTable();
         System.out.println("Searching to depth 5...\n");
-        SearchEngine.SearchResult result2 = engine.search(board2, 5, 5000);
+        SearchResult result2 = engine.search(board2, 5, 5000);
         
         System.out.println("\nBest move: " + (result2.bestMove() != null ? result2.bestMove().toUCI() : "none"));
         System.out.println("Score: " + result2.score() + " cp");
@@ -131,7 +131,7 @@ public class SearchEngineTest {
         
         System.out.println("Searching to depth 6...\n");
         long startTime = System.currentTimeMillis();
-        SearchEngine.SearchResult result = engine.search(board, 6, 15000);
+        SearchResult result = engine.search(board, 6, 15000);
         long elapsed = System.currentTimeMillis() - startTime;
         
         System.out.println("\n=== Search Complete ===");
@@ -188,7 +188,7 @@ public class SearchEngineTest {
         
         BitBoard newBoard = board.copy();
         newBoard.makeMove(move);
-        SearchEngine.SearchResult result = engine.search(newBoard, 5, 3000);
+        SearchResult result = engine.search(newBoard, 5, 3000);
         
         System.out.println("Resulting score: " + (-result.score()) + " cp");
         System.out.println("Best reply: " + (result.bestMove() != null ? result.bestMove().toUCI() : "none"));
